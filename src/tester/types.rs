@@ -9,6 +9,7 @@ use std::{
 
 /// HTTP methods supported for testing
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -62,6 +63,7 @@ pub struct TestConfig {
     pub body: Option<String>,
 
     /// Content-Type header value
+    #[allow(dead_code)]
     pub content_type: String,
 
     /// Basic authentication in (username, password) format
@@ -84,6 +86,7 @@ pub struct TestConfig {
 /// Metrics for a single request
 #[derive(Debug, Clone)]
 pub struct RequestMetric {
+    #[allow(dead_code)]
     pub timestamp: f64,
     pub latency_ms: f64,
     pub status_code: u16,

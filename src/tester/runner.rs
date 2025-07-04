@@ -23,6 +23,7 @@ pub struct TestRunner {
 }
 
 impl TestRunner {
+    #[allow(dead_code)]
     /// Create a new test runner with the given configuration
     pub fn new(config: TestConfig) -> Self {
         let state = Arc::new(std::sync::Mutex::new(TestState::new(&config)));
@@ -52,6 +53,7 @@ impl TestRunner {
         }
     }
 
+    #[allow(dead_code)]
     /// Get a reference to the shared state
     pub fn shared_state(&self) -> SharedState {
         SharedState {
@@ -59,6 +61,7 @@ impl TestRunner {
         }
     }
 
+    #[allow(dead_code)]
     /// Stop the test
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::SeqCst);
