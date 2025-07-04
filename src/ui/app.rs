@@ -34,6 +34,11 @@ impl UiState {
 }
 
 impl App {
+    /// Used to signal the main thread to exit
+    pub fn should_exit() {
+        std::process::exit(0);
+    }
+    
     /// Create a new UI application
     pub fn new(shared_state: SharedState) -> Self {
         App {
@@ -84,9 +89,20 @@ impl App {
                                 let mut app_state = self.shared_state.state.lock().unwrap();
                                 app_state.should_quit = true;
                             }
-                            break;
+                            
+                            // Restore terminal before exiting
+                            disable_raw_mode()?;
+                            execute!(
+                                terminal.backend_mut(),
+                                LeaveAlternateScreen,
+                                DisableMouseCapture
+                            )?;
+                            terminal.show_cursor()?;
+                            
+                            // Exit the entire application
+                            Self::should_exit();
                         }
-                        KeyCode::Char('h') => {
+                        KeyCode::Char('h') | KeyCode::Char('?') => {
                             self.ui_state.show_help = !self.ui_state.show_help;
                         }
                         KeyCode::Char('1') => {
@@ -108,7 +124,7 @@ impl App {
                                 // Create and launch a new test runner
                                 let config = TestConfig {
                                     url: app_state.url.clone(),
-                                    method: app_state.method.clone(),
+                                    method: app_state.method,
                                     requests: app_state.target_requests,
                                     concurrent: app_state.concurrent_requests,
                                     duration: app_state.duration,

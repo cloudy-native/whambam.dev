@@ -87,7 +87,7 @@ impl TestRunner {
 
                 // Configure proxy if specified
                 if let Some(proxy) = &config.proxy {
-                    let proxy_url = format!("http://{}", proxy);
+                    let proxy_url = format!("http://{proxy}");
                     match reqwest::Proxy::http(&proxy_url) {
                         Ok(proxy) => {
                             client_builder = client_builder.proxy(proxy);
@@ -297,7 +297,7 @@ pub fn print_final_report(test_state: &TestState) {
         0.0
     };
 
-    println!("\n===== Blamo Web Throughput Test Results =====");
+    println!("\n===== WHAMBAM Results =====");
     println!("URL: {}", test_state.url);
     println!("HTTP Method: {}", test_state.method);
 
@@ -305,13 +305,13 @@ pub fn print_final_report(test_state: &TestState) {
     if !test_state.headers.is_empty() {
         println!("Custom headers:");
         for (name, value) in &test_state.headers {
-            println!("  {}: {}", name, value);
+            println!("  {name}: {value}");
         }
     }
 
     println!("Total Requests: {}", test_state.completed_requests);
-    println!("Total Time: {:.2}s", elapsed);
-    println!("Average Throughput: {:.2} req/s", overall_tps);
+    println!("Total Time: {elapsed:.2}s");
+    println!("Average Throughput: {overall_tps:.2} req/s");
     println!(
         "Error Count: {} ({:.2}%)",
         test_state.error_count,
@@ -335,7 +335,7 @@ pub fn print_final_report(test_state: &TestState) {
         if value.fract() == 0.0 {
             format!("{} {}", value as i64, unit)
         } else {
-            format!("{:.3} {}", value, unit)
+            format!("{value:.3} {unit}")
         }
     };
 
@@ -361,6 +361,6 @@ pub fn print_final_report(test_state: &TestState) {
     for status in status_codes {
         let count = *test_state.status_counts.get(&status).unwrap_or(&0);
         let percentage = 100.0 * count as f64 / test_state.completed_requests.max(1) as f64;
-        println!("  HTTP {}: {} ({:.2}%)", status, count, percentage);
+        println!("  HTTP {status}: {count} ({percentage:.2}%)");
     }
 }

@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use url::Url;
@@ -208,7 +207,7 @@ fn print_hey_format_report(test_state: &TestState) {
         if value.fract() == 0.0 {
             format!("{} {}", value as i64, unit)
         } else {
-            format!("{:.3} {}", value, unit)
+            format!("{value:.3} {unit}")
         }
     };
 
@@ -216,17 +215,17 @@ fn print_hey_format_report(test_state: &TestState) {
     if !test_state.headers.is_empty() {
         println!("\nRequest Headers:");
         for (name, value) in &test_state.headers {
-            println!("  {}: {}", name, value);
+            println!("  {name}: {value}");
         }
     }
 
     // 1. Summary section
     println!("\nSummary:");
-    println!("  Total:        {:.4} secs", elapsed);
+    println!("  Total:        {elapsed:.4} secs");
     println!("  Slowest:      {}", format_latency(max_latency));
     println!("  Fastest:      {}", format_latency(min_latency));
     println!("  Average:      {}", format_latency(avg_latency));
-    println!("  Requests/sec: {:.4}", overall_tps);
+    println!("  Requests/sec: {overall_tps:.4}");
 
     // 2. Response time histogram
     println!("\nResponse time histogram:");
@@ -270,16 +269,15 @@ fn print_hey_format_report(test_state: &TestState) {
     let max_count = *histogram_data.iter().max().unwrap_or(&1) as f64;
 
     // Print histogram
-    for i in 0..num_buckets {
+    for (i, &count) in histogram_data.iter().enumerate() {
         let bucket_start = hist_min + i as f64 * bucket_size;
-        let count = histogram_data[i];
 
         // Create histogram bar
         let bar_width = 40; // Maximum bar width
         let bar_len = ((count as f64 / max_count) * bar_width as f64) as usize;
         let bar = "■".repeat(bar_len.min(bar_width));
 
-        println!("  {:.3} [{:5}]\t|{}", bucket_start, count, bar);
+        println!("  {bucket_start:.3} [{count:5}]\t|{bar}");
     }
 
     // 3. Latency distribution
@@ -341,11 +339,11 @@ fn print_hey_format_report(test_state: &TestState) {
 
     let success_count = status_codes
         .iter()
-        .filter(|&&code| code >= 200 && code < 300)
+        .filter(|&&code| (200..300).contains(&code))
         .map(|&code| test_state.status_counts.get(&code).unwrap_or(&0))
         .sum::<usize>();
 
-    println!("  [2xx] {} responses (Success)", success_count);
+    println!("  [2xx] {success_count} responses (Success)");
 
     for status in status_codes {
         // Skip individual 2xx codes as we've summarized them above
@@ -361,7 +359,7 @@ fn print_hey_format_report(test_state: &TestState) {
             5 => "(Server Error)",
             _ => "",
         };
-        println!("  [{}]    {} responses {}", status, count, status_desc);
+        println!("  [{status}]    {count} responses {status_desc}");
     }
 
     if test_state.error_count > 0 {
@@ -391,8 +389,7 @@ async fn main() -> Result<()> {
             headers.push((name.trim().to_string(), value));
         } else {
             eprintln!(
-                "Warning: Ignoring invalid header format: '{}'. Expected 'Name: Value' format.",
-                header
+                "Warning: Ignoring invalid header format: '{header}'. Expected 'Name: Value' format."
             );
         }
     }
@@ -418,13 +415,13 @@ async fn main() -> Result<()> {
             // Body from file
             let path = Path::new(file_path);
             if !path.exists() {
-                eprintln!("Warning: Body file not found: {}", file_path);
+                eprintln!("Warning: Body file not found: {file_path}");
                 None
             } else {
                 match fs::read_to_string(path) {
                     Ok(content) => Some(content),
                     Err(e) => {
-                        eprintln!("Warning: Failed to read body file: {}: {}", file_path, e);
+                        eprintln!("Warning: Failed to read body file: {file_path}: {e}");
                         None
                     }
                 }
@@ -442,14 +439,13 @@ async fn main() -> Result<()> {
             Some((username.to_string(), password.to_string()))
         } else {
             eprintln!(
-                "Warning: Invalid basic auth format: '{}'. Expected 'username:password' format.",
-                auth_str
+                "Warning: Invalid basic auth format: '{auth_str}'. Expected 'username:password' format."
             );
             None
         }
     });
 
-    println!("Starting throughput test for: {}", url);
+    println!("Starting throughput test for: {url}");
     println!("HTTP Method: {}", args.method);
     // When duration is specified, don't show requests since we're ignoring that parameter
     if duration_secs > 0 {
@@ -483,7 +479,7 @@ async fn main() -> Result<()> {
 
     // Display proxy if provided
     if let Some(proxy) = &args.proxy {
-        println!("Using HTTP proxy: {}", proxy);
+        println!("Using HTTP proxy: {proxy}");
     }
 
 
@@ -507,7 +503,7 @@ async fn main() -> Result<()> {
                 &body_content[..100]
             );
         } else {
-            println!("Request body: {}", body_content);
+            println!("Request body: {body_content}");
         }
     }
 
@@ -515,18 +511,17 @@ async fn main() -> Result<()> {
     if !headers.is_empty() {
         println!("Headers:");
         for (name, value) in &headers {
-            println!("  {}: {}", name, value);
+            println!("  {name}: {value}");
         }
     }
     println!(
         "Duration: {}",
         if duration_secs > 0 {
-            format!("{} seconds", duration_secs)
+            format!("{duration_secs} seconds")
         } else {
             "Unlimited".to_string()
         }
     );
-    println!("Press Ctrl+C to stop the test\n");
 
     // When duration is specified, set requests to 0 (unlimited)
     // Otherwise ensure request count is not less than concurrency level
@@ -547,7 +542,7 @@ async fn main() -> Result<()> {
     // Create test configuration
         let config = TestConfig {
             url: args.url.clone(),
-            method: args.method.clone(),
+            method: args.method,
             requests,
             concurrent: args.concurrent,
             duration: duration_secs,
@@ -588,17 +583,11 @@ async fn main() -> Result<()> {
                     let _ = runner.start().await;
                 });
 
-                // Don't block the main thread on app.run() so we don't deadlock
-                tokio::spawn(async move {
-                    // This will run the UI in a separate task
-                    if let Err(e) = app.run() {
-                        eprintln!("UI error: {:?}", e);
-                    }
-                });
-
-                // Keep the main thread alive
-                tokio::signal::ctrl_c().await?;
-                println!("Shutting down...");
+                // Run the UI and let it control the application lifecycle
+                if let Err(e) = app.run() {
+                    eprintln!("UI error: {e:?}");
+                }
+                // If we reach here, the UI has exited
             }
             "hey" => {
                 // Hey-compatible text output

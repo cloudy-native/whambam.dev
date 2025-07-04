@@ -6,7 +6,7 @@ use crate::HttpMethod;
 fn test_comprehensive_command_line() {
     // Test all possible arguments together
     let args = Args::parse_from([
-        "blamo-web-throughput",
+        "whambam",
         "https://api.example.com/test/endpoint",
         "-n", "1000",
         "-c", "50",
@@ -15,7 +15,7 @@ fn test_comprehensive_command_line() {
         "-m", "POST",
         "-t", "30",
         "-H", "Content-Type: application/json",
-        "-H", "User-Agent: blamo-test",
+        "-H", "User-Agent: whambam",
         "-H", "Authorization: Bearer token123",
         "-A", "application/json",
         "-a", "username:password123",
@@ -40,7 +40,7 @@ fn test_comprehensive_command_line() {
     // Check headers
     assert_eq!(args.headers.len(), 3);
     assert_eq!(args.headers[0], "Content-Type: application/json");
-    assert_eq!(args.headers[1], "User-Agent: blamo-test");
+    assert_eq!(args.headers[1], "User-Agent: whambam");
     assert_eq!(args.headers[2], "Authorization: Bearer token123");
     
     // Check other HTTP options
@@ -61,7 +61,7 @@ fn test_comprehensive_command_line() {
 fn test_minimum_command_line() {
     // Test with only the required URL argument
     let args = Args::parse_from([
-        "blamo-web-throughput",
+        "whambam",
         "http://example.com"
     ]);
     

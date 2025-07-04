@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: WhambBam Website
+    url: https://whambam.dev
+    about: Visit our website for more information about the project.
+  - name: WhambBam Documentation
+    url: https://whambam.dev/docs
+    about: Check our documentation for guides and tutorials.

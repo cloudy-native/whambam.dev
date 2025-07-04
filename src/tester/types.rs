@@ -184,7 +184,7 @@ impl TestState {
         let now = Instant::now();
         TestState {
             url: config.url.clone(),
-            method: config.method.clone(),
+            method: config.method,
             target_requests: config.requests,
             concurrent_requests: config.concurrent,
             duration: config.duration,

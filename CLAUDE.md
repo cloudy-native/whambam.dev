@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-blamo-web-throughput is a super-low-latency web throughput testing framework. It is designed to measure the performance of web applications in terms of the number of requests that can be processed per second.
+whambam is a super-low-latency web throughput testing framework. It is designed to measure the performance of web applications in terms of the number of requests that can be processed per second.
 
 ## Repository Structure
 
@@ -30,10 +30,6 @@ Always run `cargo fmt`, `cargo check` and `cargo clippy` after making updates to
 ### Linting and Formatting
 `cargo fmt`
 `cargo clippy`
-
-## Architecture Overview
-
-The architecture of blamo-web-throughput is currently minimal, with only a main.rs file in the src directory.
 
 ## Important Notes
 

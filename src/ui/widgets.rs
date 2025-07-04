@@ -1,9 +1,9 @@
 use ratatui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Margin, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
-    text::{Span, Spans, Text},
+    text::Span,
     widgets::{Axis, Block, Borders, Chart, Clear, Dataset, Paragraph, Row, Table, Tabs},
     Frame,
 };
@@ -36,7 +36,7 @@ fn create_throughput_axis_labels(min: f64, max: f64, num_labels: usize) -> Vec<S
         // Use sensible rounding based on the value range
         let formatted = if max <= 10.0 {
             // For small values, show 1 decimal place
-            format!("{:.1}", value)
+            format!("{value:.1}")
         } else if max <= 100.0 {
             // For medium values, round to whole numbers
             format!("{}", value.round() as i64)
@@ -72,7 +72,7 @@ fn create_latency_axis_labels(min: f64, max: f64, num_labels: usize) -> Vec<Span
         };
 
         // Always use 1 decimal place
-        let formatted = format!("{:.1}{}", value_adj, unit);
+        let formatted = format!("{value_adj:.1}{unit}");
 
         labels.push(Span::styled(formatted, Style::default().fg(Color::Gray)));
     }
@@ -80,9 +80,9 @@ fn create_latency_axis_labels(min: f64, max: f64, num_labels: usize) -> Vec<Span
     labels
 }
 
-/// Create a throughput chart with the given parameters
-fn create_throughput_chart<'a>(
-    throughput_data: &'a [(f64, f64)],
+/// Configuration for chart creation
+struct ChartConfig<'a> {
+    data: &'a [(f64, f64)],
     title: &'a str,
     marker: symbols::Marker,
     x_min: f64,
@@ -90,80 +90,74 @@ fn create_throughput_chart<'a>(
     y_max: f64,
     num_x_labels: usize,
     num_y_labels: usize,
-) -> Chart<'a> {
+}
+
+/// Create a throughput chart with the given parameters
+fn create_throughput_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
     let throughput_dataset = vec![Dataset::default()
         .name("Throughput (req/s)")
-        .marker(marker)
+        .marker(config.marker)
         .style(Style::default().fg(Color::Cyan))
-        .data(throughput_data)];
+        .data(config.data)];
 
     // Create axis labels
-    let x_labels = create_time_axis_labels(x_min, x_max, num_x_labels);
-    let y_labels = create_throughput_axis_labels(0.0, y_max, num_y_labels);
+    let x_labels = create_time_axis_labels(config.x_min, config.x_max, config.num_x_labels);
+    let y_labels = create_throughput_axis_labels(0.0, config.y_max, config.num_y_labels);
 
     // Create and return the chart
     Chart::new(throughput_dataset)
         .block(
             Block::default()
-                .title(Span::styled(title, Style::default().fg(Color::Cyan)))
+                .title(Span::styled(config.title, Style::default().fg(Color::Cyan)))
                 .borders(Borders::ALL),
         )
         .x_axis(
             Axis::default()
                 .title(Span::styled("Time (s)", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([x_min, x_max])
+                .bounds([config.x_min, config.x_max])
                 .labels(x_labels),
         )
         .y_axis(
             Axis::default()
                 .title(Span::styled("Req/s", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([0.0, y_max])
+                .bounds([0.0, config.y_max])
                 .labels(y_labels),
         )
 }
 
 /// Create a latency chart with the given parameters
-fn create_latency_chart<'a>(
-    latency_data: &'a [(f64, f64)],
-    title: &'a str,
-    marker: symbols::Marker,
-    x_min: f64,
-    x_max: f64,
-    y_max: f64,
-    num_x_labels: usize,
-    num_y_labels: usize,
-) -> Chart<'a> {
+fn create_latency_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
     let latency_dataset = vec![Dataset::default()
         .name("Latency (ms)")
-        .marker(marker)
+        .marker(config.marker)
         .style(Style::default().fg(Color::Yellow))
-        .data(latency_data)];
+        .data(config.data)];
 
     // Create axis labels
-    let x_labels = create_time_axis_labels(x_min, x_max, num_x_labels);
-    let y_labels = create_latency_axis_labels(0.0, y_max, num_y_labels);
+    let x_labels = create_time_axis_labels(config.x_min, config.x_max, config.num_x_labels);
+    let y_labels = create_latency_axis_labels(0.0, config.y_max, config.num_y_labels);
 
     // Create and return the chart
     Chart::new(latency_dataset)
         .block(
             Block::default()
-                .title(Span::styled(title, Style::default().fg(Color::Yellow)))
+                .title(Span::styled(config.title, Style::default().fg(Color::Yellow)))
                 .borders(Borders::ALL),
         )
         .x_axis(
             Axis::default()
                 .title(Span::styled("Time (s)", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([x_min, x_max])
+                .bounds([config.x_min, config.x_max])
                 .labels(x_labels),
         )
         .y_axis(
             Axis::default()
                 .title(Span::styled("", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([0.0, y_max])
+                .bounds([0.0, config.y_max])
                 .labels(y_labels),
         )
 }
@@ -199,7 +193,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, app_state: &TestState, ui_state: &UiStat
         "RUNNING"
     };
     let title = format!(
-        "BLAMO Web Throughput Test - {} - {} for {:.1}s",
+        "WHAMBAM - {} - {} for {:.1}s",
         app_state.url, status, elapsed
     );
 
@@ -214,7 +208,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, app_state: &TestState, ui_state: &UiStat
         .borders(Borders::ALL)
         .style(Style::default());
 
-    let full_title = format!("{}{}", title, key_help);
+    let full_title = format!("{title}{key_help}");
     let color = if app_state.is_complete {
         Color::Blue
     } else {
@@ -227,7 +221,7 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, app_state: &TestState, ui_state: &UiStat
     f.render_widget(title_text, chunks[0]);
 
     // Tabs
-    let tab_titles = vec!["Dashboard (1)", "Charts (2)", "Status Codes (3)"];
+    let tab_titles = vec!["Dashboard ('1')", "Charts ('2')", "Status Codes ('3')"];
     let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::ALL))
         .select(ui_state.selected_tab)
@@ -299,16 +293,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
         0.0
     };
 
-    let throughput_stats = vec![
-        format!("Completed Requests: {}", completed),
-        format!("Error Count: {}", errors),
-        format!("Success Rate: {:.1}%", success_rate),
+    let throughput_stats = [
+        format!("Completed Requests: {completed}"),
+        format!("Error Count: {errors}"),
+        format!("Success Rate: {success_rate:.1}%"),
         format!(
             "Current Throughput: {:.1} req/s",
             app_state.current_throughput
         ),
-        format!("Overall Throughput: {:.1} req/s", overall_tps),
-        format!("Elapsed Time: {:.1}s", elapsed),
+        format!("Overall Throughput: {overall_tps:.1} req/s"),
+        format!("Elapsed Time: {elapsed:.1}s"),
     ];
 
     let throughput_block = Block::default()
@@ -349,11 +343,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
         if value.fract() == 0.0 {
             format!("{} {}", value as i64, unit)
         } else {
-            format!("{:.3} {}", value, unit)
+            format!("{value:.3} {unit}")
         }
     };
 
-    let latency_stats = vec![
+    let latency_stats = [
         format!("Min Latency: {}", format_latency(min)),
         format!("Max Latency: {}", format_latency(app_state.max_latency)),
         format!("P50 Latency: {}", format_latency(app_state.p50_latency)),
@@ -399,14 +393,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
 
     // Create throughput chart with small dot markers and fewer labels
     let throughput_chart = create_throughput_chart(
-        &throughput_data,
-        "Throughput over time",
-        symbols::Marker::Dot,
-        mini_x_min,
-        mini_x_max,
-        mini_y_max,
-        3, // Fewer x-axis labels for mini chart
-        3, // Fewer y-axis labels for mini chart
+        ChartConfig {
+            data: &throughput_data,
+            title: "Throughput over time",
+            marker: symbols::Marker::Dot,
+            x_min: mini_x_min,
+            x_max: mini_x_max,
+            y_max: mini_y_max,
+            num_x_labels: 3, // Fewer x-axis labels for mini chart
+            num_y_labels: 3, // Fewer y-axis labels for mini chart
+        }
     );
 
     f.render_widget(throughput_chart, chart_chunks[0]);
@@ -425,14 +421,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
 
     // Create latency chart with small dot markers and fewer labels
     let latency_chart = create_latency_chart(
-        &latency_data,
-        "Latency over time",
-        symbols::Marker::Dot,
-        mini_lat_x_min,
-        mini_lat_x_max,
-        mini_lat_y_max,
-        3, // Fewer x-axis labels for mini chart
-        3, // Fewer y-axis labels for mini chart
+        ChartConfig {
+            data: &latency_data,
+            title: "Latency over time",
+            marker: symbols::Marker::Dot,
+            x_min: mini_lat_x_min,
+            x_max: mini_lat_x_max,
+            y_max: mini_lat_y_max,
+            num_x_labels: 3, // Fewer x-axis labels for mini chart
+            num_y_labels: 3, // Fewer y-axis labels for mini chart
+        }
     );
 
     f.render_widget(latency_chart, chart_chunks[1]);
@@ -462,14 +460,16 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
 
     // Create throughput chart with Braille markers and more labels
     let throughput_chart = create_throughput_chart(
-        &throughput_data,
-        "Throughput over time",
-        symbols::Marker::Braille,
-        x_min,
-        x_max,
-        y_max,
-        6, // More x-axis labels for full chart
-        6, // More y-axis labels for full chart
+        ChartConfig {
+            data: &throughput_data,
+            title: "Throughput over time",
+            marker: symbols::Marker::Braille,
+            x_min,
+            x_max,
+            y_max,
+            num_x_labels: 6, // More x-axis labels for full chart
+            num_y_labels: 6, // More y-axis labels for full chart
+        }
     );
 
     f.render_widget(throughput_chart, chunks[0]);
@@ -488,14 +488,16 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
 
     // Create latency chart with Braille markers and more labels
     let latency_chart = create_latency_chart(
-        &latency_data,
-        "Latency over time",
-        symbols::Marker::Braille,
-        l_x_min,
-        l_x_max,
-        l_y_max,
-        6, // More x-axis labels for full chart
-        6, // More y-axis labels for full chart
+        ChartConfig {
+            data: &latency_data,
+            title: "Latency over time",
+            marker: symbols::Marker::Braille,
+            x_min: l_x_min,
+            x_max: l_x_max,
+            y_max: l_y_max,
+            num_x_labels: 6, // More x-axis labels for full chart
+            num_y_labels: 6, // More y-axis labels for full chart
+        }
     );
 
     f.render_widget(latency_chart, chunks[1]);
@@ -535,7 +537,7 @@ fn render_status_codes<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area
             Style::default().fg(color)
         };
 
-        let status_text = Span::styled(format!("{}", status), style);
+        let status_text = Span::styled(format!("{status}"), style);
 
         status_rows.push(Row::new(vec![
             status_text.content.to_string(),
@@ -602,7 +604,7 @@ fn render_help<B: Backend>(f: &mut Frame<B>, area: Rect) {
         .style(Style::default().bg(Color::Black).fg(Color::White));
 
     // Help text content
-    let help_text = vec![
+    let help_text = [
         "Press 'q' to quit",
         "Press 'r' to restart completed test",
         "Press 'h' to toggle this help overlay",

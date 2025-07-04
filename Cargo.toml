@@ -1,12 +1,16 @@
 [package]
-name = "blamo-web-throughput"
+name = "whambam"
 version = "0.1.0"
 edition = "2021"
-description = "A simple HTTP throughput testing tool"
-default-run = "blamo-web-throughput"
+description = "A feature-rich HTTP throughput testing tool with interactive UI"
+authors = ["WhambBam Contributors"]
+license = "MIT"
+homepage = "https://whambam.dev"
+repository = "https://github.com/whambam/whambam"
+default-run = "whambam"
 
 [[bin]]
-name = "blamo-web-throughput"
+name = "whambam"
 path = "src/main.rs"
 
 [dependencies]
