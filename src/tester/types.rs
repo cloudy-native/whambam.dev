@@ -8,7 +8,7 @@ use std::{
 //use floating_duration::TimeAsFloat;
 
 /// HTTP methods supported for testing
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -70,8 +70,6 @@ pub struct TestConfig {
     /// HTTP proxy address in host:port format
     pub proxy: Option<String>,
 
-    /// Whether to use HTTP/2
-    pub http2: bool,
 
     /// Whether to disable compression
     pub disable_compression: bool,

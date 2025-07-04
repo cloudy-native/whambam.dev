@@ -36,7 +36,6 @@ blamo-web-throughput <URL> [OPTIONS]
 - `-o, --output <FORMAT>`: Output format (default: ui)
   - `ui`: Interactive terminal UI with real-time statistics
   - `hey`: Text summary in a format similar to the hey tool
-- `--debug`: Run in debug mode with detailed output (no UI)
 - `-h, --help`: Print help
 - `-V, --version`: Print version
 
@@ -72,22 +71,29 @@ The tool features a rich terminal UI with:
 - `h`: Toggle help overlay
 - `q` or `ESC`: Quit the application
 
-## Debug Mode
+## Local Testing
 
-When troubleshooting, use the `--debug` flag for simplified output:
+For local testing, you can easily set up a simple HTTP server using Node.js:
+
+1. Install the http-server package:
 
 ```
-blamo-web-throughput https://example.com -n 10 -c 5 --debug
+brew install http-server
 ```
 
-This bypasses the UI and provides direct output for each request, useful for diagnosing connection issues.
+2. Start the server in your current directory:
 
-## Development Tools
+```
+http-server .
+```
 
-The project includes additional tools for development:
+3. Test against the local server:
 
-- **Debug HTTP Server**: A simple server that logs incoming requests (`node debug_server.js`)
-- **Debug Helper**: A standalone HTTP client for testing connections (`cargo run --bin debug_helper`)
+```
+blamo-web-throughput http://localhost:8080 -n 100 -c 10
+```
+
+This provides a quick and easy way to test your installation and experiment with different options without making external requests.
 
 ## Final Report
 

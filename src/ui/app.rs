@@ -114,6 +114,14 @@ impl App {
                                     duration: app_state.duration,
                                     rate_limit: 0.0, // Default no rate limit
                                     headers: app_state.headers.clone(),
+                                    timeout: 20, // Default timeout
+                                    body: None, // No body
+                                    content_type: "text/html".to_string(),
+                                    basic_auth: None, // No auth
+                                    proxy: None, // No proxy
+                                    disable_compression: false,
+                                    disable_keepalive: false,
+                                    disable_redirects: false,
                                 };
 
                                 let state_clone = Arc::clone(&self.shared_state.state);

@@ -6,15 +6,11 @@ description = "A simple HTTP throughput testing tool"
 default-run = "blamo-web-throughput"
 
 [[bin]]
-name = "debug_helper"
-path = "debug_helper.rs"
-
-[[bin]]
 name = "blamo-web-throughput"
 path = "src/main.rs"
 
 [dependencies]
-reqwest = { version = "0.11", features = ["blocking", "http2"] }
+reqwest = { version = "0.11", features = ["blocking"] }
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"

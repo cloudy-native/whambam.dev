@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-// Removed unused imports
 use floating_duration::TimeAsFloat;
 use reqwest::Client;
 use std::{
@@ -7,7 +6,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
-    // thread removed
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc;
@@ -86,10 +84,6 @@ impl TestRunner {
             let client = {
                 let mut client_builder = Client::builder();
 
-                // Configure HTTP/2 if requested
-                if config.http2 {
-                    client_builder = client_builder.use_rustls_tls().http2_prior_knowledge();
-                }
 
                 // Configure proxy if specified
                 if let Some(proxy) = &config.proxy {
@@ -159,8 +153,10 @@ impl TestRunner {
                 let tx_clone = tx.clone();
                 let is_running_clone = Arc::clone(&is_running);
 
-                // Create a clone of headers here to avoid ownership issues
+                // Create clones of data we need in the task to avoid ownership issues
                 let headers_clone = config.headers.clone();
+                let body_clone = config.body.clone();
+                let basic_auth_clone = config.basic_auth.clone();
 
                 // Spawn a task for this request
                 let handle = tokio::spawn(async move {
@@ -202,12 +198,12 @@ impl TestRunner {
                     }
 
                     // Add basic auth if provided
-                    if let Some((username, password)) = &config.basic_auth {
+                    if let Some((username, password)) = &basic_auth_clone {
                         request_builder = request_builder.basic_auth(username, Some(password));
                     }
 
                     // Add request body if provided
-                    if let Some(body_content) = &config.body {
+                    if let Some(body_content) = &body_clone {
                         request_builder = request_builder.body(body_content.clone());
                     }
 

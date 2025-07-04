@@ -36,6 +36,7 @@ flamegraph.svg
 *.trace
 
 # Code coverage artifacts
+tarpaulin-report.html
 *.profraw
 *.gcda
 *.gcno

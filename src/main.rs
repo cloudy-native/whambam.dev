@@ -6,9 +6,11 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
-mod debug;
 mod tester;
 mod ui;
+
+#[cfg(test)]
+mod tests;
 
 use tester::{HttpMethod, SharedState, TestConfig, TestRunner, TestState};
 use ui::App;
@@ -29,16 +31,12 @@ fn parse_http_method(s: &str) -> Result<HttpMethod> {
     }
 }
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 #[command(author, version, about = "Test the throughput of an HTTP(S) endpoint")]
 struct Args {
     /// The URL to test
     #[arg(required = true)]
     url: String,
-
-    /// HTTP method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS)
-    #[arg(short = 'm', long = "method", default_value = "GET", value_parser = parse_http_method)]
-    method: HttpMethod,
 
     /// Number of requests to send (0 for unlimited)
     #[arg(short = 'n', long, default_value = "200")]
@@ -54,14 +52,17 @@ struct Args {
     #[arg(short = 'z', long = "duration", default_value = "0")]
     duration_str: String,
 
+    /// Timeout for each request in seconds. Default is 20, use 0 for infinite.
+    #[arg(short = 't', long = "timeout", default_value = "20")]
+    timeout: u64,
+
     /// Rate limit in queries per second (QPS) per worker (0 for no limit)
     #[arg(short = 'q', long, default_value = "0")]
     rate_limit: f64,
 
-    /// Custom HTTP header. You can specify as many as needed by repeating the flag.
-    /// For example, -H "Accept: text/html" -H "Content-Type: application/xml"
-    #[arg(short = 'H', long = "header", action = clap::ArgAction::Append)]
-    headers: Vec<String>,
+    /// HTTP method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+    #[arg(short = 'm', long = "method", default_value = "GET", value_parser = parse_http_method)]
+    method: HttpMethod,
 
     /// HTTP Accept header
     #[arg(short = 'A', long = "accept")]
@@ -79,6 +80,11 @@ struct Args {
     #[arg(short = 'D', long = "body-file")]
     body_file: Option<String>,
 
+    /// Custom HTTP header. You can specify as many as needed by repeating the flag.
+    /// For example, -H "Accept: text/html" -H "Content-Type: application/xml"
+    #[arg(short = 'H', long = "header", action = clap::ArgAction::Append)]
+    headers: Vec<String>,
+
     /// Content-Type header, defaults to "text/html"
     #[arg(short = 'T', long = "content-type", default_value = "text/html")]
     content_type: String,
@@ -86,10 +92,6 @@ struct Args {
     /// HTTP Proxy address as host:port
     #[arg(short = 'x', long = "proxy")]
     proxy: Option<String>,
-
-    /// Enable HTTP/2
-    #[arg(long = "h2")]
-    http2: bool,
 
     /// Disable compression
     #[arg(long = "disable-compression")]
@@ -103,17 +105,9 @@ struct Args {
     #[arg(long = "disable-redirects")]
     disable_redirects: bool,
 
-    /// Timeout for each request in seconds. Default is 20, use 0 for infinite.
-    #[arg(short = 't', long = "timeout", default_value = "20")]
-    timeout: u64,
-
     /// Output format: 'ui' for interactive display, 'hey' for text summary
     #[arg(short = 'o', long = "output", default_value = "ui")]
     output_format: String,
-
-    /// Run in debug mode to diagnose HTTP request issues
-    #[arg(long)]
-    debug: bool,
 }
 
 /// Parse a duration string like "10s", "5m", etc. into seconds
@@ -492,10 +486,6 @@ async fn main() -> Result<()> {
         println!("Using HTTP proxy: {}", proxy);
     }
 
-    // Display HTTP/2 status
-    if args.http2 {
-        println!("HTTP/2: Enabled");
-    }
 
     // Display other HTTP options
     if args.disable_compression {
@@ -554,29 +544,7 @@ async fn main() -> Result<()> {
         args.requests
     };
 
-    if args.debug {
-        // Run in debug mode
-        println!("Running in debug mode...");
-        debug::run_debug_test(
-            &args.url,
-            requests,
-            args.concurrent,
-            duration_secs,
-            args.method.clone(),
-            headers,
-            args.timeout,
-            body,
-            args.content_type,
-            basic_auth,
-            args.proxy.clone(),
-            args.http2,
-            args.disable_compression,
-            args.disable_keepalive,
-            args.disable_redirects,
-        )
-        .await?
-    } else {
-        // Create test configuration
+    // Create test configuration
         let config = TestConfig {
             url: args.url.clone(),
             method: args.method.clone(),
@@ -590,7 +558,6 @@ async fn main() -> Result<()> {
             content_type: args.content_type,
             basic_auth,
             proxy: args.proxy.clone(),
-            http2: args.http2,
             disable_compression: args.disable_compression,
             disable_keepalive: args.disable_keepalive,
             disable_redirects: args.disable_redirects,
@@ -678,7 +645,6 @@ async fn main() -> Result<()> {
                 ));
             }
         }
-    };
 
     Ok(())
 }
