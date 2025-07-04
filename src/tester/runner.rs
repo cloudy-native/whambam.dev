@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 // Removed unused imports
+use floating_duration::TimeAsFloat;
 use reqwest::Client;
 use std::{
     sync::{
@@ -11,9 +12,8 @@ use std::{
 };
 use tokio::sync::mpsc;
 use url::Url;
-use floating_duration::TimeAsFloat;
 
-use super::types::{Message, RequestMetric, SharedState, TestConfig, TestState};
+use super::types::{HttpMethod, Message, RequestMetric, SharedState, TestConfig, TestState};
 
 /// The throughput test runner
 pub struct TestRunner {
@@ -39,7 +39,7 @@ impl TestRunner {
             rx,
         }
     }
-    
+
     /// Create a new test runner with an existing shared state
     pub fn with_state(config: TestConfig, shared_state: SharedState) -> Self {
         let (tx, rx) = mpsc::channel::<Message>(100);
@@ -82,39 +82,86 @@ impl TestRunner {
 
         // Spawn load test task
         let _load_test_handle = tokio::spawn(async move {
-            let client = Client::new();
+            // Create client with specified configuration
+            let client = {
+                let mut client_builder = Client::builder();
+
+                // Configure HTTP/2 if requested
+                if config.http2 {
+                    client_builder = client_builder.use_rustls_tls().http2_prior_knowledge();
+                }
+
+                // Configure proxy if specified
+                if let Some(proxy) = &config.proxy {
+                    let proxy_url = format!("http://{}", proxy);
+                    match reqwest::Proxy::http(&proxy_url) {
+                        Ok(proxy) => {
+                            client_builder = client_builder.proxy(proxy);
+                        }
+                        Err(_) => {
+                            eprintln!("Warning: Invalid proxy URL.");
+                        }
+                    }
+                }
+
+                // Configure additional HTTP options
+                if config.disable_compression {
+                    client_builder = client_builder.no_gzip().no_brotli().no_deflate();
+                }
+
+                if config.disable_keepalive {
+                    client_builder = client_builder.tcp_nodelay(true).pool_max_idle_per_host(0);
+                }
+
+                if config.disable_redirects {
+                    client_builder = client_builder.redirect(reqwest::redirect::Policy::none());
+                }
+
+                // Build the client
+                client_builder.build().unwrap_or_else(|_| {
+                    eprintln!("Warning: Failed to configure client with specified options. Using default client.");
+                    Client::new()
+                })
+            };
             let url = url.clone();
             let _requests_count = Arc::new(AtomicUsize::new(0));
-            
+
             let start_time = Instant::now();
-            let max_requests = if config.requests > 0 { config.requests } else { usize::MAX };
+            let max_requests = if config.requests > 0 {
+                config.requests
+            } else {
+                usize::MAX
+            };
             let max_duration = if config.duration > 0 {
                 Some(Duration::from_secs(config.duration))
             } else {
                 None
             };
-            
+
             // Use a different approach to manage concurrency
             let mut handles = Vec::new();
-            
+
             for _i in 0..max_requests {
                 if !is_running.load(Ordering::SeqCst) {
                     break;
                 }
-                
+
                 // Check duration limit
                 if let Some(max_dur) = max_duration {
                     if start_time.elapsed() >= max_dur {
                         break;
                     }
                 }
-                
+
                 // Create clones for this task
                 let client_clone = client.clone();
                 let url_clone = url.clone();
                 let tx_clone = tx.clone();
                 let is_running_clone = Arc::clone(&is_running);
-                
+
+                // Create a clone of headers here to avoid ownership issues
+                let headers_clone = config.headers.clone();
+
                 // Spawn a task for this request
                 let handle = tokio::spawn(async move {
                     // Apply rate limiting if configured
@@ -122,26 +169,64 @@ impl TestRunner {
                         let delay_ms = (1000.0 / config.rate_limit) as u64;
                         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     }
-                    
+
                     // Check if we should stop
                     if !is_running_clone.load(Ordering::SeqCst) {
                         return;
                     }
-                    
-                    // Make the request
+
+                    // Make the request with specified method
                     let request_start = Instant::now();
-                    let result = client_clone.get(url_clone).send().await;
+
+                    // Create the request builder based on method
+                    let mut request_builder = match config.method {
+                        HttpMethod::GET => client_clone.get(url_clone),
+                        HttpMethod::POST => client_clone.post(url_clone),
+                        HttpMethod::PUT => client_clone.put(url_clone),
+                        HttpMethod::DELETE => client_clone.delete(url_clone),
+                        HttpMethod::HEAD => client_clone.head(url_clone),
+                        HttpMethod::OPTIONS => {
+                            client_clone.request(reqwest::Method::OPTIONS, url_clone)
+                        }
+                    };
+
+                    // Set request timeout if specified
+                    if config.timeout > 0 {
+                        request_builder =
+                            request_builder.timeout(Duration::from_secs(config.timeout));
+                    }
+
+                    // Add custom headers from the clone we created before spawning
+                    for (name, value) in &headers_clone {
+                        request_builder = request_builder.header(name, value);
+                    }
+
+                    // Add basic auth if provided
+                    if let Some((username, password)) = &config.basic_auth {
+                        request_builder = request_builder.basic_auth(username, Some(password));
+                    }
+
+                    // Add request body if provided
+                    if let Some(body_content) = &config.body {
+                        request_builder = request_builder.body(body_content.clone());
+                    }
+
+                    // Send the request
+                    let result = request_builder.send().await;
                     let duration = request_start.elapsed();
-                    
+
                     // Create metric
                     let metric = match result {
                         Ok(resp) => {
                             let status = resp.status().as_u16();
+                            let status_class = status / 100;
+                            let is_error = status_class != 2; // Consider non-2xx as errors
+
                             RequestMetric {
                                 timestamp: start_time.elapsed().as_fractional_secs(),
                                 latency_ms: duration.as_fractional_millis(),
                                 status_code: status,
-                                is_error: false,
+                                is_error,
                             }
                         }
                         Err(_) => RequestMetric {
@@ -151,14 +236,14 @@ impl TestRunner {
                             is_error: true,
                         },
                     };
-                    
+
                     // Send metric update
                     let _ = tx_clone.send(Message::RequestComplete(metric)).await;
                 });
-                
+
                 handles.push(handle);
-                
-                // Maintain concurrency level by waiting for one task to complete 
+
+                // Maintain concurrency level by waiting for one task to complete
                 // when we reach the concurrency limit
                 if handles.len() >= config.concurrent {
                     if let Some(handle) = handles.pop() {
@@ -166,12 +251,12 @@ impl TestRunner {
                     }
                 }
             }
-            
+
             // Wait for remaining requests to complete
             for handle in handles {
                 let _ = handle.await;
             }
-            
+
             // Signal that we're done
             let _ = tx.send(Message::TestComplete).await;
         });
@@ -202,7 +287,11 @@ impl TestRunner {
 /// Generate a final report from the test state
 pub fn print_final_report(test_state: &TestState) {
     let elapsed = if test_state.is_complete && test_state.end_time.is_some() {
-        test_state.end_time.unwrap().duration_since(test_state.start_time).as_secs_f64()
+        test_state
+            .end_time
+            .unwrap()
+            .duration_since(test_state.start_time)
+            .as_secs_f64()
     } else {
         test_state.start_time.elapsed().as_secs_f64()
     };
@@ -211,27 +300,68 @@ pub fn print_final_report(test_state: &TestState) {
     } else {
         0.0
     };
-    
+
     println!("\n===== Blamo Web Throughput Test Results =====");
     println!("URL: {}", test_state.url);
+    println!("HTTP Method: {}", test_state.method);
+
+    // Display custom headers if any
+    if !test_state.headers.is_empty() {
+        println!("Custom headers:");
+        for (name, value) in &test_state.headers {
+            println!("  {}: {}", name, value);
+        }
+    }
+
     println!("Total Requests: {}", test_state.completed_requests);
     println!("Total Time: {:.2}s", elapsed);
     println!("Average Throughput: {:.2} req/s", overall_tps);
-    println!("Error Count: {} ({:.2}%)", 
-             test_state.error_count, 
-             100.0 * test_state.error_count as f64 / test_state.completed_requests.max(1) as f64);
-    
+    println!(
+        "Error Count: {} ({:.2}%)",
+        test_state.error_count,
+        100.0 * test_state.error_count as f64 / test_state.completed_requests.max(1) as f64
+    );
+
+    // Helper function to format latency with appropriate units and hide trailing zeros
+    let format_latency = |latency_ms: f64| -> String {
+        let (value, unit) = if latency_ms < 1.0 {
+            // Microseconds
+            (latency_ms * 1000.0, "μs")
+        } else if latency_ms < 1000.0 {
+            // Milliseconds
+            (latency_ms, "ms")
+        } else {
+            // Seconds
+            (latency_ms / 1000.0, "s")
+        };
+
+        // Check if the fractional part is zero
+        if value.fract() == 0.0 {
+            format!("{} {}", value as i64, unit)
+        } else {
+            format!("{:.3} {}", value, unit)
+        }
+    };
+
     println!("\nLatency Statistics:");
-    println!("  Min: {:.2} ms", if test_state.min_latency == f64::MAX { 0.0 } else { test_state.min_latency });
-    println!("  Max: {:.2} ms", test_state.max_latency);
-    println!("  P50: {:.2} ms", test_state.p50_latency);
-    println!("  P90: {:.2} ms", test_state.p90_latency);
-    println!("  P99: {:.2} ms", test_state.p99_latency);
-    
+    println!(
+        "  Min: {}",
+        format_latency(if test_state.min_latency == f64::MAX {
+            0.0
+        } else {
+            test_state.min_latency
+        })
+    );
+    println!("  Max: {}", format_latency(test_state.max_latency));
+    println!("  P50: {}", format_latency(test_state.p50_latency));
+    println!("  P90: {}", format_latency(test_state.p90_latency));
+    println!("  P95: {}", format_latency(test_state.p95_latency));
+    println!("  P99: {}", format_latency(test_state.p99_latency));
+
     println!("\nStatus Code Distribution:");
     let mut status_codes: Vec<u16> = test_state.status_counts.keys().cloned().collect();
     status_codes.sort();
-    
+
     for status in status_codes {
         let count = *test_state.status_counts.get(&status).unwrap_or(&0);
         let percentage = 100.0 * count as f64 / test_state.completed_requests.max(1) as f64;

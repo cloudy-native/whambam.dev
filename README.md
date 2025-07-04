@@ -29,7 +29,13 @@ blamo-web-throughput <URL> [OPTIONS]
 - `-n, --requests <REQUESTS>`: Number of requests to send (default: 200, 0 for unlimited)
 - `-c, --concurrent <CONCURRENT>`: Number of concurrent connections (default: 50)
 - `-q, --rate-limit <RATE>`: Rate limit in queries per second (QPS) per worker (default: 0, no limit)
-- `-d, --duration <DURATION>`: Test duration in seconds (default: 0 for unlimited)
+- `-z, --duration <DURATION>`: Duration to send requests (default: 0 for unlimited)  
+  When duration is reached, application stops and exits.  
+  If duration is specified, `-n` is ignored.  
+  Supports time units: `-z 10s` (seconds), `-z 3m` (minutes), `-z 1h` (hours)
+- `-o, --output <FORMAT>`: Output format (default: ui)
+  - `ui`: Interactive terminal UI with real-time statistics
+  - `hey`: Text summary in a format similar to the hey tool
 - `--debug`: Run in debug mode with detailed output (no UI)
 - `-h, --help`: Print help
 - `-V, --version`: Print version
