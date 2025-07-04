@@ -1,4 +1,4 @@
-use crate::tester::{HttpMethod, TestConfig, TestState, RequestMetric};
+use crate::tester::{HttpMethod, RequestMetric, TestConfig, TestState};
 use std::time::Instant;
 
 #[test]
@@ -33,7 +33,10 @@ fn test_test_config_initialization() {
     assert_eq!(config.timeout, 20);
     assert_eq!(config.body, Some("test body".to_string()));
     assert_eq!(config.content_type, "application/json");
-    assert_eq!(config.basic_auth, Some(("username".to_string(), "password".to_string())));
+    assert_eq!(
+        config.basic_auth,
+        Some(("username".to_string(), "password".to_string()))
+    );
     assert_eq!(config.proxy, Some("localhost:8080".to_string()));
     assert!(config.disable_compression);
     assert!(config.disable_keepalive);
@@ -108,7 +111,7 @@ fn test_test_state_update() {
     };
 
     let mut test_state = TestState::new(&config);
-    
+
     // Test updating with successful request
     let metric_success = RequestMetric {
         timestamp: 0.1,
@@ -116,9 +119,9 @@ fn test_test_state_update() {
         status_code: 200,
         is_error: false,
     };
-    
+
     test_state.update(metric_success);
-    
+
     assert_eq!(test_state.completed_requests, 1);
     assert_eq!(test_state.error_count, 0);
     assert_eq!(test_state.status_counts.get(&200), Some(&1));
@@ -127,7 +130,7 @@ fn test_test_state_update() {
     assert_eq!(test_state.min_latency, 50.0);
     assert_eq!(test_state.max_latency, 50.0);
     assert!(!test_state.is_complete);
-    
+
     // Test updating with error request
     let metric_error = RequestMetric {
         timestamp: 0.2,
@@ -135,9 +138,9 @@ fn test_test_state_update() {
         status_code: 500,
         is_error: true,
     };
-    
+
     test_state.update(metric_error);
-    
+
     assert_eq!(test_state.completed_requests, 2);
     assert_eq!(test_state.error_count, 1);
     assert_eq!(test_state.status_counts.get(&500), Some(&1));
@@ -169,7 +172,7 @@ fn test_test_state_reset() {
     };
 
     let mut test_state = TestState::new(&config);
-    
+
     // Add some data
     let metric = RequestMetric {
         timestamp: 0.1,
@@ -177,15 +180,15 @@ fn test_test_state_reset() {
         status_code: 200,
         is_error: false,
     };
-    
+
     test_state.update(metric);
     test_state.is_complete = true;
     test_state.should_quit = true;
     test_state.end_time = Some(Instant::now());
-    
+
     // Reset and verify all values are reset
     test_state.reset();
-    
+
     assert_eq!(test_state.completed_requests, 0);
     assert_eq!(test_state.error_count, 0);
     assert_eq!(test_state.status_counts.len(), 0);

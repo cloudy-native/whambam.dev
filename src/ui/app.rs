@@ -38,7 +38,7 @@ impl App {
     pub fn should_exit() {
         std::process::exit(0);
     }
-    
+
     /// Create a new UI application
     pub fn new(shared_state: SharedState) -> Self {
         App {
@@ -89,7 +89,7 @@ impl App {
                                 let mut app_state = self.shared_state.state.lock().unwrap();
                                 app_state.should_quit = true;
                             }
-                            
+
                             // Restore terminal before exiting
                             disable_raw_mode()?;
                             execute!(
@@ -98,7 +98,7 @@ impl App {
                                 DisableMouseCapture
                             )?;
                             terminal.show_cursor()?;
-                            
+
                             // Exit the entire application
                             Self::should_exit();
                         }
@@ -131,10 +131,10 @@ impl App {
                                     rate_limit: 0.0, // Default no rate limit
                                     headers: app_state.headers.clone(),
                                     timeout: 20, // Default timeout
-                                    body: None, // No body
+                                    body: None,  // No body
                                     content_type: "text/html".to_string(),
                                     basic_auth: None, // No auth
-                                    proxy: None, // No proxy
+                                    proxy: None,      // No proxy
                                     disable_compression: false,
                                     disable_keepalive: false,
                                     disable_redirects: false,

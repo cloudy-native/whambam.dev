@@ -143,7 +143,10 @@ fn create_latency_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
     Chart::new(latency_dataset)
         .block(
             Block::default()
-                .title(Span::styled(config.title, Style::default().fg(Color::Yellow)))
+                .title(Span::styled(
+                    config.title,
+                    Style::default().fg(Color::Yellow),
+                ))
                 .borders(Borders::ALL),
         )
         .x_axis(
@@ -392,18 +395,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     let mini_y_max = max_throughput * 1.1;
 
     // Create throughput chart with small dot markers and fewer labels
-    let throughput_chart = create_throughput_chart(
-        ChartConfig {
-            data: &throughput_data,
-            title: "Throughput over time",
-            marker: symbols::Marker::Dot,
-            x_min: mini_x_min,
-            x_max: mini_x_max,
-            y_max: mini_y_max,
-            num_x_labels: 3, // Fewer x-axis labels for mini chart
-            num_y_labels: 3, // Fewer y-axis labels for mini chart
-        }
-    );
+    let throughput_chart = create_throughput_chart(ChartConfig {
+        data: &throughput_data,
+        title: "Throughput over time",
+        marker: symbols::Marker::Dot,
+        x_min: mini_x_min,
+        x_max: mini_x_max,
+        y_max: mini_y_max,
+        num_x_labels: 3, // Fewer x-axis labels for mini chart
+        num_y_labels: 3, // Fewer y-axis labels for mini chart
+    });
 
     f.render_widget(throughput_chart, chart_chunks[0]);
 
@@ -420,18 +421,16 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     let mini_lat_y_max = max_latency * 1.1;
 
     // Create latency chart with small dot markers and fewer labels
-    let latency_chart = create_latency_chart(
-        ChartConfig {
-            data: &latency_data,
-            title: "Latency over time",
-            marker: symbols::Marker::Dot,
-            x_min: mini_lat_x_min,
-            x_max: mini_lat_x_max,
-            y_max: mini_lat_y_max,
-            num_x_labels: 3, // Fewer x-axis labels for mini chart
-            num_y_labels: 3, // Fewer y-axis labels for mini chart
-        }
-    );
+    let latency_chart = create_latency_chart(ChartConfig {
+        data: &latency_data,
+        title: "Latency over time",
+        marker: symbols::Marker::Dot,
+        x_min: mini_lat_x_min,
+        x_max: mini_lat_x_max,
+        y_max: mini_lat_y_max,
+        num_x_labels: 3, // Fewer x-axis labels for mini chart
+        num_y_labels: 3, // Fewer y-axis labels for mini chart
+    });
 
     f.render_widget(latency_chart, chart_chunks[1]);
 }
@@ -459,18 +458,16 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
     let y_max = max_throughput * 1.1;
 
     // Create throughput chart with Braille markers and more labels
-    let throughput_chart = create_throughput_chart(
-        ChartConfig {
-            data: &throughput_data,
-            title: "Throughput over time",
-            marker: symbols::Marker::Braille,
-            x_min,
-            x_max,
-            y_max,
-            num_x_labels: 6, // More x-axis labels for full chart
-            num_y_labels: 6, // More y-axis labels for full chart
-        }
-    );
+    let throughput_chart = create_throughput_chart(ChartConfig {
+        data: &throughput_data,
+        title: "Throughput over time",
+        marker: symbols::Marker::Braille,
+        x_min,
+        x_max,
+        y_max,
+        num_x_labels: 6, // More x-axis labels for full chart
+        num_y_labels: 6, // More y-axis labels for full chart
+    });
 
     f.render_widget(throughput_chart, chunks[0]);
 
@@ -487,18 +484,16 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
     let l_y_max = max_latency * 1.1;
 
     // Create latency chart with Braille markers and more labels
-    let latency_chart = create_latency_chart(
-        ChartConfig {
-            data: &latency_data,
-            title: "Latency over time",
-            marker: symbols::Marker::Braille,
-            x_min: l_x_min,
-            x_max: l_x_max,
-            y_max: l_y_max,
-            num_x_labels: 6, // More x-axis labels for full chart
-            num_y_labels: 6, // More y-axis labels for full chart
-        }
-    );
+    let latency_chart = create_latency_chart(ChartConfig {
+        data: &latency_data,
+        title: "Latency over time",
+        marker: symbols::Marker::Braille,
+        x_min: l_x_min,
+        x_max: l_x_max,
+        y_max: l_y_max,
+        num_x_labels: 6, // More x-axis labels for full chart
+        num_y_labels: 6, // More y-axis labels for full chart
+    });
 
     f.render_widget(latency_chart, chunks[1]);
 }

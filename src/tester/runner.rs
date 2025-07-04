@@ -87,7 +87,6 @@ impl TestRunner {
             let client = {
                 let mut client_builder = Client::builder();
 
-
                 // Configure proxy if specified
                 if let Some(proxy) = &config.proxy {
                     let proxy_url = format!("http://{proxy}");
