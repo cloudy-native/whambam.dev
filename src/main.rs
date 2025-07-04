@@ -482,7 +482,6 @@ async fn main() -> Result<()> {
         println!("Using HTTP proxy: {proxy}");
     }
 
-
     // Display other HTTP options
     if args.disable_compression {
         println!("Compression: Disabled");
@@ -540,100 +539,100 @@ async fn main() -> Result<()> {
     };
 
     // Create test configuration
-        let config = TestConfig {
-            url: args.url.clone(),
-            method: args.method,
-            requests,
-            concurrent: args.concurrent,
-            duration: duration_secs,
-            rate_limit: args.rate_limit,
-            headers,
-            timeout: args.timeout,
-            body,
-            content_type: args.content_type,
-            basic_auth,
-            proxy: args.proxy.clone(),
-            disable_compression: args.disable_compression,
-            disable_keepalive: args.disable_keepalive,
-            disable_redirects: args.disable_redirects,
-        };
+    let config = TestConfig {
+        url: args.url.clone(),
+        method: args.method,
+        requests,
+        concurrent: args.concurrent,
+        duration: duration_secs,
+        rate_limit: args.rate_limit,
+        headers,
+        timeout: args.timeout,
+        body,
+        content_type: args.content_type,
+        basic_auth,
+        proxy: args.proxy.clone(),
+        disable_compression: args.disable_compression,
+        disable_keepalive: args.disable_keepalive,
+        disable_redirects: args.disable_redirects,
+    };
 
-        // Check output format
-        match args.output_format.to_lowercase().as_str() {
-            "ui" => {
-                // Interactive UI mode
-                println!("Starting in UI mode...");
+    // Check output format
+    match args.output_format.to_lowercase().as_str() {
+        "ui" => {
+            // Interactive UI mode
+            println!("Starting in UI mode...");
 
-                // Create a shared state first
-                let state = Arc::new(Mutex::new(TestState::new(&config)));
+            // Create a shared state first
+            let state = Arc::new(Mutex::new(TestState::new(&config)));
 
-                // Create the UI app using a direct reference to the shared state
-                let shared_state = SharedState {
-                    state: Arc::clone(&state),
-                };
-                let mut app = App::new(shared_state);
+            // Create the UI app using a direct reference to the shared state
+            let shared_state = SharedState {
+                state: Arc::clone(&state),
+            };
+            let mut app = App::new(shared_state);
 
-                // Start the test in a separate task, but only move the config
-                let config_clone = config.clone();
-                let state_clone = Arc::clone(&state);
-                tokio::spawn(async move {
-                    // Create a test runner inside the task with the shared state
-                    let mut runner =
-                        TestRunner::with_state(config_clone, SharedState { state: state_clone });
-                    let _ = runner.start().await;
-                });
-
-                // Run the UI and let it control the application lifecycle
-                if let Err(e) = app.run() {
-                    eprintln!("UI error: {e:?}");
-                }
-                // If we reach here, the UI has exited
-            }
-            "hey" => {
-                // Hey-compatible text output
-                println!("Starting in text summary mode (hey format)...");
-
-                // Create a shared state
-                let state = Arc::new(Mutex::new(TestState::new(&config)));
-                let shared_state = SharedState {
-                    state: Arc::clone(&state),
-                };
-
-                // Run the test without UI
-                let mut runner = TestRunner::with_state(config, shared_state.clone());
+            // Start the test in a separate task, but only move the config
+            let config_clone = config.clone();
+            let state_clone = Arc::clone(&state);
+            tokio::spawn(async move {
+                // Create a test runner inside the task with the shared state
+                let mut runner =
+                    TestRunner::with_state(config_clone, SharedState { state: state_clone });
                 let _ = runner.start().await;
+            });
 
-                // Wait for the test to complete
-                println!("Running test...");
-                let mut is_complete = false;
-                while !is_complete {
-                    // Check if test is complete
-                    let test_status = {
-                        let state = shared_state.state.lock().unwrap();
-                        (state.is_complete, state.completed_requests)
-                    };
-
-                    is_complete = test_status.0;
-                    if !is_complete {
-                        // Print progress
-                        print!("\rRequests completed: {}   ", test_status.1);
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    }
-                }
-                println!("\nTest completed!");
-
-                // Print summary report
-                let test_state = shared_state.state.lock().unwrap();
-                print_hey_format_report(&test_state);
+            // Run the UI and let it control the application lifecycle
+            if let Err(e) = app.run() {
+                eprintln!("UI error: {e:?}");
             }
-            _ => {
-                // Unknown output format
-                return Err(anyhow!(
-                    "Invalid output format: {}. Supported formats: 'ui' or 'hey'",
-                    args.output_format
-                ));
-            }
+            // If we reach here, the UI has exited
         }
+        "hey" => {
+            // Hey-compatible text output
+            println!("Starting in text summary mode (hey format)...");
+
+            // Create a shared state
+            let state = Arc::new(Mutex::new(TestState::new(&config)));
+            let shared_state = SharedState {
+                state: Arc::clone(&state),
+            };
+
+            // Run the test without UI
+            let mut runner = TestRunner::with_state(config, shared_state.clone());
+            let _ = runner.start().await;
+
+            // Wait for the test to complete
+            println!("Running test...");
+            let mut is_complete = false;
+            while !is_complete {
+                // Check if test is complete
+                let test_status = {
+                    let state = shared_state.state.lock().unwrap();
+                    (state.is_complete, state.completed_requests)
+                };
+
+                is_complete = test_status.0;
+                if !is_complete {
+                    // Print progress
+                    print!("\rRequests completed: {}   ", test_status.1);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+            }
+            println!("\nTest completed!");
+
+            // Print summary report
+            let test_state = shared_state.state.lock().unwrap();
+            print_hey_format_report(&test_state);
+        }
+        _ => {
+            // Unknown output format
+            return Err(anyhow!(
+                "Invalid output format: {}. Supported formats: 'ui' or 'hey'",
+                args.output_format
+            ));
+        }
+    }
 
     Ok(())
 }

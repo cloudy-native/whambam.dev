@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, time::Duration};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
 
 struct ServerState {
@@ -34,7 +34,7 @@ impl MockServer {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(ServerState::new());
-        
+
         let state_clone = state.clone();
         let server_task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
@@ -44,30 +44,34 @@ impl MockServer {
                 });
             }
         });
-        
+
         MockServer {
             port,
             state,
             server_task: Some(server_task),
         }
     }
-    
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
-    
+
     pub fn request_count(&self) -> usize {
         self.state.request_count.load(Ordering::SeqCst)
     }
-    
+
     pub fn set_response_status(&self, status: u16) {
-        self.state.status_code.store(status as usize, Ordering::SeqCst);
+        self.state
+            .status_code
+            .store(status as usize, Ordering::SeqCst);
     }
-    
+
     pub fn set_response_delay(&self, delay_ms: u64) {
-        self.state.delay_ms.store(delay_ms as usize, Ordering::SeqCst);
+        self.state
+            .delay_ms
+            .store(delay_ms as usize, Ordering::SeqCst);
     }
-    
+
     pub fn get_received_headers(&self) -> HashMap<String, Vec<String>> {
         self.state.headers.lock().unwrap().clone()
     }
@@ -83,68 +87,69 @@ impl Drop for MockServer {
 
 async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
     let mut buffer = [0; 1024];
-    
+
     // Read the request
     let mut headers = Vec::new();
-    
+
     // Simple HTTP request parsing
     let mut bytes_read = 0;
     while bytes_read < buffer.len() {
-        match stream.read(&mut buffer[bytes_read..bytes_read+1]).await {
+        match stream.read(&mut buffer[bytes_read..bytes_read + 1]).await {
             Ok(0) => break, // End of stream
             Ok(n) => {
                 bytes_read += n;
-                
+
                 // Check if we have a complete line
-                if buffer[bytes_read-1] == b'\n' {
-                    if bytes_read >= 2 && buffer[bytes_read-2] == b'\r' {
+                if buffer[bytes_read - 1] == b'\n' {
+                    if bytes_read >= 2 && buffer[bytes_read - 2] == b'\r' {
                         // We have a complete line
-                        let line = String::from_utf8_lossy(&buffer[..bytes_read-2]);
+                        let line = String::from_utf8_lossy(&buffer[..bytes_read - 2]);
                         headers.push(line.to_string());
-                        
+
                         // If we got an empty line, we're done with headers
                         if line.is_empty() {
                             break;
                         }
-                        
+
                         // Reset for next line
                         buffer = [0; 1024];
                         bytes_read = 0;
                     }
                 }
-            },
+            }
             Err(_) => break,
         }
     }
-    
+
     // Process headers - Do this inside a block to ensure the mutex is dropped before the await
     {
         let mut header_map = state.headers.lock().unwrap();
-        
-        for line in headers.iter().skip(1) { // Skip the request line
+
+        for line in headers.iter().skip(1) {
+            // Skip the request line
             if line.is_empty() {
                 break;
             }
-            
+
             if let Some(idx) = line.find(':') {
                 let (name, value) = line.split_at(idx);
                 let name = name.trim().to_lowercase();
                 let value = value[1..].trim().to_string();
-                
+
                 header_map.entry(name).or_insert_with(Vec::new).push(value);
             }
         }
     }
-    
+
     // Increment request counter
     state.request_count.fetch_add(1, Ordering::SeqCst);
-    
+
     // Apply delay if configured
     let delay_ms = state.delay_ms.load(Ordering::SeqCst);
     if delay_ms > 0 {
         sleep(Duration::from_millis(delay_ms as u64)).await;
     }
-    
+
     // Send response
     let status = state.status_code.load(Ordering::SeqCst) as u16;
     let status_text = match status {
@@ -158,7 +163,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
         500 => "Internal Server Error",
         _ => "Unknown",
     };
-    
+
     let response = format!(
         "HTTP/1.1 {} {}\r\n\
          Content-Type: text/plain\r\n\
@@ -168,7 +173,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
          Hello, World!",
         status, status_text
     );
-    
+
     let _ = stream.write_all(response.as_bytes()).await;
     let _ = stream.flush().await;
 }
@@ -177,29 +182,32 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
 mod tests {
     use super::*;
     use reqwest::Client;
-    
+
     #[tokio::test]
     async fn test_mock_server() {
         let server = MockServer::start().await;
         let client = Client::new();
-        
+
         // Test basic request
         let resp = client.get(&server.url()).send().await.unwrap();
         assert_eq!(resp.status().as_u16(), 200);
         assert_eq!(server.request_count(), 1);
-        
+
         // Test with custom status code
         server.set_response_status(404);
         let resp = client.get(&server.url()).send().await.unwrap();
         assert_eq!(resp.status().as_u16(), 404);
         assert_eq!(server.request_count(), 2);
-        
+
         // Test with custom headers
-        let _resp = client.get(&server.url())
+        let _resp = client
+            .get(&server.url())
             .header("X-Test", "test-value")
             .header("User-Agent", "mock-client")
-            .send().await.unwrap();
-        
+            .send()
+            .await
+            .unwrap();
+
         let headers = server.get_received_headers();
         assert!(headers.contains_key("x-test"));
         assert_eq!(headers.get("x-test").unwrap()[0], "test-value");

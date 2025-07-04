@@ -72,7 +72,6 @@ pub struct TestConfig {
     /// HTTP proxy address in host:port format
     pub proxy: Option<String>,
 
-
     /// Whether to disable compression
     pub disable_compression: bool,
 
