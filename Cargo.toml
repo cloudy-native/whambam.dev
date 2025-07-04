@@ -3,6 +3,15 @@ name = "blamo-web-throughput"
 version = "0.1.0"
 edition = "2021"
 description = "A simple HTTP throughput testing tool"
+default-run = "blamo-web-throughput"
+
+[[bin]]
+name = "debug_helper"
+path = "debug_helper.rs"
+
+[[bin]]
+name = "blamo-web-throughput"
+path = "src/main.rs"
 
 [dependencies]
 reqwest = { version = "0.11", features = ["blocking"] }

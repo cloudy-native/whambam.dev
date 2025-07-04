@@ -10,7 +10,7 @@ blamo-web-throughput is a super-low-latency web throughput testing framework. It
 
 This is a standard Rust project with a Cargo.toml file and a src directory.
 
-Don't let code files get to be more than 300 lines long. Always refactor to keep files short and focused. If you find yourself writing a long function, consider breaking it down into smaller functions. Always factor similar code into reusable functions.
+Don't let code files get to be more than 300 lines long. Always refactor to keep files short and focused. If you find yourself writing a long function, consider breaking it down into smaller functions. Always factor similar code into reusable functions. Implement separation of concerns in code. Use the DRY and KISS achitectural principles. 
 
 ## Development Commands
 
