@@ -1,0 +1,21 @@
+[package]
+name = "blamo-web-throughput"
+version = "0.1.0"
+edition = "2021"
+description = "A simple HTTP throughput testing tool"
+
+[dependencies]
+reqwest = { version = "0.11", features = ["blocking"] }
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
+futures = "0.3"
+indicatif = "0.17"
+url = "2.4"
+ratatui = "0.22.0"
+crossterm = "0.27.0"
+chrono = "0.4"
+tui-logger = "0.9.6"
+log = "0.4"
+floating-duration = "0.1.2"
+hdrhistogram = "7.5.2"
