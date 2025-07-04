@@ -2,6 +2,8 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - 'main'
     tags:
       - 'v*'
   workflow_dispatch:
@@ -20,10 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            name: whambam-windows-x86_64.exe
+          # # Windows (TBD)
+          # - target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          #   name: whambam-windows-x86_64.exe
             
           # macOS Intel
           - target: x86_64-apple-darwin
