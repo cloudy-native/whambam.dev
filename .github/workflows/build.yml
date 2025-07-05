@@ -37,15 +37,15 @@ jobs:
             os: macos-latest
             name: whambam-macos-arm64
             
-          # Linux x86_64
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: whambam-linux-x86_64
+          # # Linux x86_64
+          # - target: x86_64-unknown-linux-gnu
+          #   os: ubuntu-latest
+          #   name: whambam-linux-x86_64
             
-          # Linux ARM64
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: whambam-linux-arm64
+          # # Linux ARM64
+          # - target: aarch64-unknown-linux-gnu
+          #   os: ubuntu-latest
+          #   name: whambam-linux-arm64
     
     steps:
       - name: Checkout code
