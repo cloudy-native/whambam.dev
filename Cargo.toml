@@ -1,12 +1,12 @@
 [package]
 name = "whambam"
-version = "0.1.0"
+version = "0.1.6"
 edition = "2021"
 description = "A feature-rich HTTP throughput testing tool with interactive UI"
-authors = ["WhambBam Contributors"]
+authors = ["Stephen Harrison"]
 license = "MIT"
 homepage = "https://whambam.dev"
-repository = "https://github.com/whambam/whambam"
+repository = "https://github.com/cloudy-native/whambam"
 default-run = "whambam"
 
 [[bin]]
