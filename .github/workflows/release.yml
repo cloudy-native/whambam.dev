@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      
+      - name: Build Intel
+        run: cargo build --release --target x86_64-apple-darwin
+      
+      - name: Build ARM
+        run: cargo build --release --target aarch64-apple-darwin
+      
+      - name: Package Intel
+        run: |
+          mkdir -p whambam-intel
+          cp target/x86_64-apple-darwin/release/whambam whambam-intel/
+          tar -czf whambam-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz -C whambam-intel whambam
+      
+      - name: Package ARM
+        run: |
+          mkdir -p whambam-arm
+          cp target/aarch64-apple-darwin/release/whambam whambam-arm/
+          tar -czf whambam-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz -C whambam-arm whambam
+      
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            whambam-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz
+            whambam-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
