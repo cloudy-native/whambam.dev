@@ -38,6 +38,7 @@ hdrhistogram = "7.5.2"
 vendored-openssl = ["openssl/vendored"]
 
 [package.metadata.release]
+publish = false
 sign-commit = false
 sign-tag = false
 pre-release-commit-message = "Release {{version}}"
