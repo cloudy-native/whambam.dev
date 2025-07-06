@@ -3,13 +3,26 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
+  # Run tests before building release
+  test:
+    name: Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --verbose
+
   build:
+    name: Build
+    needs: test # Only build if tests pass
     strategy:
       matrix:
         target:
@@ -17,28 +30,28 @@ jobs:
           - aarch64-apple-darwin
         include:
           - target: x86_64-apple-darwin
-            os: macos-13  # Intel runner
+            os: macos-13
           - target: aarch64-apple-darwin
-            os: macos-14  # ARM runner
-    
+            os: macos-14
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - uses: actions/checkout@v4
-      
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      
+      - uses: Swatinem/rust-cache@v2
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
-      
+
       - name: Package
         run: |
           mkdir -p whambam-${{ matrix.target }}
           cp target/${{ matrix.target }}/release/whambam whambam-${{ matrix.target }}/
           tar -czf whambam-${{ github.ref_name }}-${{ matrix.target }}.tar.gz -C whambam-${{ matrix.target }} whambam
-      
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -46,15 +59,16 @@ jobs:
           path: whambam-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
 
   release:
+    name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-      
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
