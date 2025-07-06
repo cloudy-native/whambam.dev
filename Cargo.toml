@@ -1,13 +1,16 @@
 [package]
 name = "whambam"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
-description = "A feature-rich HTTP throughput testing tool with interactive UI"
-authors = ["Stephen Harrison"]
+description = "A simple CLI web performance testing tool"
+authors = ["Stephen Harrison <stephen@harrison.org>"]
 license = "MIT"
 homepage = "https://whambam.dev"
-repository = "https://github.com/cloudy-native/whambam"
+repository = "https://github.com/cloudy-native/whambam.dev"
 default-run = "whambam"
+readme = "README.md"
+keywords = ["performance", "web", "testing", "cli", "benchmark"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "whambam"
@@ -33,3 +36,11 @@ hdrhistogram = "7.5.2"
 
 [features]
 vendored-openssl = ["openssl/vendored"]
+
+[package.metadata.release]
+sign-commit = false
+sign-tag = false
+pre-release-commit-message = "Release {{version}}"
+tag-message = "Release {{version}}"
+tag-name = "v{{version}}"
+
