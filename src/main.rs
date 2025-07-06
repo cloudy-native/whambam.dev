@@ -190,7 +190,6 @@ fn print_hey_format_report(test_state: &TestState) {
     let avg_latency =
         test_state.p50_latency * 0.6 + test_state.p90_latency * 0.3 + test_state.p95_latency * 0.1;
 
-
     // Display headers used in request
     if !test_state.headers.is_empty() {
         println!("\nRequest Headers:");

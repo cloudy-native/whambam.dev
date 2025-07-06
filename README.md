@@ -19,7 +19,7 @@ You should find replacements for the following formulae:
   hey
 ```
 
-The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void with:
+The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void:
 
 - Has **Drop-in compatibility** with hey's command-line arguments
 - Adds **Modern interactive UI** with real-time metrics and charts
@@ -63,8 +63,8 @@ brew install cloudy-native/whambam/whambam
 
 ### From Source
 ```bash
-git clone https://github.com/cloudy-native/whambam.git
-cd whambam
+git clone https://github.com/cloudy-native/whambam.dev.git
+cd whambam.dev
 cargo build --release
 ```
 
