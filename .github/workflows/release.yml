@@ -83,7 +83,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cloudy-native/homebrew-whambam
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-tap
 
       - name: Get release info and update formula
