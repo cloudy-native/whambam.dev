@@ -9,7 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  # Run tests before building release
   test:
     name: Test before release
     runs-on: ubuntu-latest
@@ -22,7 +21,7 @@ jobs:
 
   build:
     name: Build
-    needs: test # Only build if tests pass
+    needs: test
     strategy:
       matrix:
         target:
@@ -73,3 +72,61 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/*/whambam-*.tar.gz
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: cloudy-native/homebrew-whambam
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Get release info and update formula
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Get SHA256 checksums from the release
+          ARM_SHA=$(curl -sL "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-aarch64-apple-darwin.tar.gz" | shasum -a 256 | cut -d' ' -f1)
+          INTEL_SHA=$(curl -sL "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-x86_64-apple-darwin.tar.gz" | shasum -a 256 | cut -d' ' -f1)
+
+          # Update the formula
+          cat > homebrew-tap/Formula/whambam.rb << EOF
+          class Whambam < Formula
+            desc "whambam: a simple CLI tool for web performance testing"
+            homepage "https://github.com/cloudy-native/whambam.dev"
+            license "MIT"
+            head "https://github.com/cloudy-native/whambam.dev.git", branch: "main"
+            
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM_SHA}"
+              else
+                url "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${INTEL_SHA}"
+              end
+            end
+            
+            def install
+              bin.install "whambam"
+            end
+            
+            test do
+              system "#{bin}/whambam", "--version"
+            end
+          end
+          EOF
+
+      - name: Commit and push formula update
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/whambam.rb
+          git commit -m "Update whambam to ${GITHUB_REF#refs/tags/v}"
+          git push
