@@ -1,4 +1,4 @@
-# WhambBam Security Policy
+# Whambam Security Policy
 
 ## Supported Versions
 
@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within WhambBam, please follow these steps:
+If you discover a security vulnerability within Whambam, please follow these steps:
 
 1. **Do Not** disclose the vulnerability publicly
 2. Email the project maintainers directly (add your email here)
@@ -30,7 +30,7 @@ After submitting a vulnerability report, you can expect the following:
 
 ## Security Best Practices
 
-When using WhambBam:
+When using Whambam:
 
 1. Always use the latest version to benefit from security patches
 2. Be cautious when running tests against production environments

@@ -118,6 +118,8 @@ fn test_test_state_update() {
         latency_ms: 50.0,
         status_code: 200,
         is_error: false,
+        bytes_sent: 100,
+        bytes_received: 500,
     };
 
     test_state.update(metric_success);
@@ -129,6 +131,8 @@ fn test_test_state_update() {
     assert_eq!(test_state.recent_latencies[0], 50.0);
     assert_eq!(test_state.min_latency, 50.0);
     assert_eq!(test_state.max_latency, 50.0);
+    assert_eq!(test_state.total_bytes_sent, 100);
+    assert_eq!(test_state.total_bytes_received, 500);
     assert!(!test_state.is_complete);
 
     // Test updating with error request
@@ -137,6 +141,8 @@ fn test_test_state_update() {
         latency_ms: 100.0,
         status_code: 500,
         is_error: true,
+        bytes_sent: 150,
+        bytes_received: 200,
     };
 
     test_state.update(metric_error);
@@ -148,6 +154,8 @@ fn test_test_state_update() {
     assert_eq!(test_state.recent_latencies[1], 100.0);
     assert_eq!(test_state.min_latency, 50.0);
     assert_eq!(test_state.max_latency, 100.0);
+    assert_eq!(test_state.total_bytes_sent, 250); // 100 + 150
+    assert_eq!(test_state.total_bytes_received, 700); // 500 + 200
     assert!(!test_state.is_complete);
 }
 
@@ -179,6 +187,8 @@ fn test_test_state_reset() {
         latency_ms: 50.0,
         status_code: 200,
         is_error: false,
+        bytes_sent: 120,
+        bytes_received: 800,
     };
 
     test_state.update(metric);
@@ -201,6 +211,8 @@ fn test_test_state_reset() {
     assert_eq!(test_state.p95_latency, 0.0);
     assert_eq!(test_state.p99_latency, 0.0);
     assert_eq!(test_state.current_throughput, 0.0);
+    assert_eq!(test_state.total_bytes_sent, 0);
+    assert_eq!(test_state.total_bytes_received, 0);
     assert!(!test_state.is_complete);
     assert!(!test_state.should_quit);
     assert!(test_state.end_time.is_none());

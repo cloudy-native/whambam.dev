@@ -1,6 +1,5 @@
 use crate::parse_http_method;
 use crate::HttpMethod;
-use anyhow::Result;
 use clap::Parser;
 
 #[test]

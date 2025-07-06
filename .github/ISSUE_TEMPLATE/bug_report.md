@@ -28,7 +28,7 @@ assignees: ''
 ## Environment
  - OS: [e.g., macOS 13.2.1, Ubuntu 22.04]
  - Rust Version: [e.g., 1.72.0]
- - WhambBam Version: [e.g., 0.1.0]
+ - Whambam Version: [e.g., 0.1.0]
 
 ## Additional Context
 <!-- Add any other context about the problem here -->

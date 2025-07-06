@@ -1,6 +1,6 @@
-# Contributing to WhambBam
+# Contributing to WhamBam
 
-Thank you for your interest in contributing to WhambBam! We appreciate your help in making this project better.
+Thank you for your interest in contributing to Whambam! We appreciate your help in making this project better.
 
 This document provides guidelines and instructions for contributing to this project.
 

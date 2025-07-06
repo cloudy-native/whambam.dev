@@ -1,4 +1,4 @@
-# WhambBam Contributor Code of Conduct
+# Whambam Contributor Code of Conduct
 
 ## Our Pledge
 

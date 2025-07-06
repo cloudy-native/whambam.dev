@@ -3,13 +3,21 @@
 An open-source, unobtrusive,lightning-fast CLI tool for HTTP(S) endpoint performance testing with a handy interactive terminal UI.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+
+[![CI](https://github.com/cloudy-native/whambam.dev/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudy-native/whambam.dev/actions/workflows/ci.yml)
+[![Release](https://github.com/cloudy-native/whambam.dev/actions/workflows/release.yml/badge.svg)](https://github.com/cloudy-native/whambam.dev/actions/workflows/release.yml)
 
 **Visit [whambam.dev](https://whambam.dev) for comprehensive documentation and examples.**
 
 ![Whambam Terminal UI](./docs/images/ui.png)
 
 ## Why Whambam?
+
+```
+Warning: Some installed formulae are deprecated or disabled.
+You should find replacements for the following formulae:
+  hey
+```
 
 The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void with:
 
