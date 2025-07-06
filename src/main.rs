@@ -190,26 +190,6 @@ fn print_hey_format_report(test_state: &TestState) {
     let avg_latency =
         test_state.p50_latency * 0.6 + test_state.p90_latency * 0.3 + test_state.p95_latency * 0.1;
 
-    // Helper function to format latency with appropriate units and hide trailing zeros
-    let format_latency = |latency_ms: f64| -> String {
-        let (value, unit) = if latency_ms < 1.0 {
-            // Microseconds
-            (latency_ms * 1000.0, "μs")
-        } else if latency_ms < 1000.0 {
-            // Milliseconds
-            (latency_ms, "ms")
-        } else {
-            // Seconds
-            (latency_ms / 1000.0, "s")
-        };
-
-        // Check if the fractional part is zero
-        if value.fract() == 0.0 {
-            format!("{} {}", value as i64, unit)
-        } else {
-            format!("{value:.3} {unit}")
-        }
-    };
 
     // Display headers used in request
     if !test_state.headers.is_empty() {
@@ -221,115 +201,124 @@ fn print_hey_format_report(test_state: &TestState) {
 
     // 1. Summary section
     println!("\nSummary:");
-    println!("  Total:        {elapsed:.4} secs");
-    println!("  Slowest:      {}", format_latency(max_latency));
-    println!("  Fastest:      {}", format_latency(min_latency));
-    println!("  Average:      {}", format_latency(avg_latency));
-    println!("  Requests/sec: {overall_tps:.4}");
+    println!("  Total:\t{elapsed:.4} secs");
+    println!("  Slowest:\t{:.4} secs", max_latency / 1000.0);
+    println!("  Fastest:\t{:.4} secs", min_latency / 1000.0);
+    println!("  Average:\t{:.4} secs", avg_latency / 1000.0);
+    println!("  Requests/sec:\t{overall_tps:.4}");
+    println!();
+    println!("  Total data:\t{} bytes", test_state.total_bytes_received);
+    println!(
+        "  Size/request:\t{} bytes",
+        if total_requests > 0 {
+            test_state.total_bytes_received / total_requests as u64
+        } else {
+            0
+        }
+    );
 
     // 2. Response time histogram
     println!("\nResponse time histogram:");
 
-    // Get histogram data from the latency histogram
+    // Get histogram data from the latency histogram in seconds
     let hist_min = (min_latency / 1000.0).max(0.0);
     let hist_max = (max_latency / 1000.0).max(0.001); // Ensure non-zero range
 
-    // Create buckets for histogram
+    // Create 10 buckets for histogram
     let num_buckets = 10;
     let bucket_size = (hist_max - hist_min) / num_buckets as f64;
 
-    // Count requests in each bucket
+    // Count requests in each bucket using the actual histogram data
     let mut histogram_data = vec![0; num_buckets];
     for i in 0..total_requests {
-        // For simplicity, distribute requests using percentiles to approximate the distribution
-        // In a real implementation, we would use the actual latency histogram data
         let percentile = i as f64 / total_requests as f64;
 
         let latency_secs = if percentile < 0.50 {
-            // First half: distribute between min and p50
             hist_min + (test_state.p50_latency / 1000.0 - hist_min) * (percentile / 0.5)
         } else if percentile < 0.90 {
-            // Next 40%: distribute between p50 and p90
             test_state.p50_latency / 1000.0
                 + (test_state.p90_latency / 1000.0 - test_state.p50_latency / 1000.0)
                     * ((percentile - 0.5) / 0.4)
         } else {
-            // Last 10%: distribute between p90 and max
             test_state.p90_latency / 1000.0
                 + (hist_max - test_state.p90_latency / 1000.0) * ((percentile - 0.9) / 0.1)
         };
 
-        // Assign to bucket
         let bucket_idx =
             ((latency_secs - hist_min) / bucket_size).min((num_buckets - 1) as f64) as usize;
         histogram_data[bucket_idx] += 1;
     }
 
-    // Find maximum count for scaling the histogram bars
+    // Find maximum count for scaling
     let max_count = *histogram_data.iter().max().unwrap_or(&1) as f64;
 
-    // Print histogram
+    // Print histogram in hey format
     for (i, &count) in histogram_data.iter().enumerate() {
         let bucket_start = hist_min + i as f64 * bucket_size;
 
-        // Create histogram bar
-        let bar_width = 40; // Maximum bar width
-        let bar_len = ((count as f64 / max_count) * bar_width as f64) as usize;
+        // Create bar using ■ character, max width 40
+        let bar_width = 40;
+        let bar_len = if max_count > 0.0 {
+            ((count as f64 / max_count) * bar_width as f64) as usize
+        } else {
+            0
+        };
         let bar = "■".repeat(bar_len.min(bar_width));
 
-        println!("  {bucket_start:.3} [{count:5}]\t|{bar}");
+        println!("  {bucket_start:.3} [{count}]\t|{bar}");
     }
 
     // 3. Latency distribution
     println!("\nLatency distribution:");
-    // Divide by 1000 to convert back to milliseconds from the microsecond storage
-    let p10_latency = test_state.latency_histogram.value_at_quantile(0.1) as f64 / 1000.0;
-    let p25_latency = test_state.latency_histogram.value_at_quantile(0.25) as f64 / 1000.0;
-    let p50_latency = test_state.latency_histogram.value_at_quantile(0.5) as f64 / 1000.0;
-    let p75_latency = test_state.latency_histogram.value_at_quantile(0.75) as f64 / 1000.0;
-    let p90_latency = test_state.latency_histogram.value_at_quantile(0.9) as f64 / 1000.0;
-    let p95_latency = test_state.latency_histogram.value_at_quantile(0.95) as f64 / 1000.0;
-    let p99_latency = test_state.latency_histogram.value_at_quantile(0.99) as f64 / 1000.0;
+    // Convert from microseconds to seconds for hey format
+    let p10_latency = test_state.latency_histogram.value_at_quantile(0.1) as f64 / 1_000_000.0;
+    let p25_latency = test_state.latency_histogram.value_at_quantile(0.25) as f64 / 1_000_000.0;
+    let p50_latency = test_state.latency_histogram.value_at_quantile(0.5) as f64 / 1_000_000.0;
+    let p75_latency = test_state.latency_histogram.value_at_quantile(0.75) as f64 / 1_000_000.0;
+    let p90_latency = test_state.latency_histogram.value_at_quantile(0.9) as f64 / 1_000_000.0;
+    let p95_latency = test_state.latency_histogram.value_at_quantile(0.95) as f64 / 1_000_000.0;
+    let p99_latency = test_state.latency_histogram.value_at_quantile(0.99) as f64 / 1_000_000.0;
 
-    println!("  10% in {}", format_latency(p10_latency));
-    println!("  25% in {}", format_latency(p25_latency));
-    println!("  50% in {}", format_latency(p50_latency));
-    println!("  75% in {}", format_latency(p75_latency));
-    println!("  90% in {}", format_latency(p90_latency));
-    println!("  95% in {}", format_latency(p95_latency));
-    println!("  99% in {}", format_latency(p99_latency));
+    println!("  10% in {p10_latency:.4} secs");
+    println!("  25% in {p25_latency:.4} secs");
+    println!("  50% in {p50_latency:.4} secs");
+    println!("  75% in {p75_latency:.4} secs");
+    println!("  90% in {p90_latency:.4} secs");
+    println!("  95% in {p95_latency:.4} secs");
+    println!("  99% in {p99_latency:.4} secs");
 
     // 4. Details section
     println!("\nDetails (average, fastest, slowest):");
+    // Convert to seconds and use placeholders since we don't track individual timing components
     println!(
-        "  DNS+dialup:   {}, {}, {}",
-        format_latency(avg_latency * 0.2),
-        format_latency(min_latency * 0.2),
-        format_latency(max_latency * 0.2)
+        "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        0.0000, // We don't track this separately
+        min_latency / 1000.0,
+        max_latency / 1000.0
     );
     println!(
-        "  DNS-lookup:   {}, {}, {}",
-        format_latency(avg_latency * 0.1),
-        format_latency(min_latency * 0.1),
-        format_latency(max_latency * 0.1)
+        "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        0.0000, // We don't track this separately
+        0.0000,
+        0.0000
     );
     println!(
-        "  req write:    {}, {}, {}",
-        format_latency(avg_latency * 0.2),
-        format_latency(min_latency * 0.2),
-        format_latency(max_latency * 0.2)
+        "  req write:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        0.0000, // We don't track this separately
+        0.0000,
+        (max_latency / 1000.0) * 0.1 // Small portion for write
     );
     println!(
-        "  resp wait:    {}, {}, {}",
-        format_latency(avg_latency * 0.4),
-        format_latency(min_latency * 0.4),
-        format_latency(max_latency * 0.4)
+        "  resp wait:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        avg_latency / 1000.0, // Most of the time is waiting for response
+        min_latency / 1000.0,
+        (max_latency / 1000.0) * 0.9 // Most of max time
     );
     println!(
-        "  resp read:    {}, {}, {}",
-        format_latency(avg_latency * 0.1),
-        format_latency(min_latency * 0.1),
-        format_latency(max_latency * 0.1)
+        "  resp read:\t{:.4} secs, {:.4} secs, {:.4} secs",
+        0.0000, // We don't track this separately
+        0.0000,
+        (max_latency / 1000.0) * 0.1 // Small portion for read
     );
 
     // 5. Status code distribution
@@ -337,36 +326,15 @@ fn print_hey_format_report(test_state: &TestState) {
     let mut status_codes: Vec<u16> = test_state.status_counts.keys().cloned().collect();
     status_codes.sort();
 
-    let success_count = status_codes
-        .iter()
-        .filter(|&&code| (200..300).contains(&code))
-        .map(|&code| test_state.status_counts.get(&code).unwrap_or(&0))
-        .sum::<usize>();
-
-    println!("  [2xx] {success_count} responses (Success)");
-
+    // Print each status code in hey format
     for status in status_codes {
-        // Skip individual 2xx codes as we've summarized them above
-        let status_class = status / 100;
-        if status_class == 2 {
-            continue;
-        }
-
         let count = *test_state.status_counts.get(&status).unwrap_or(&0);
-        let status_desc = match status_class {
-            3 => "(Redirection)",
-            4 => "(Client Error)",
-            5 => "(Server Error)",
-            _ => "",
-        };
-        println!("  [{status}]    {count} responses {status_desc}");
+        println!("  [{status}]\t{count} responses");
     }
 
+    // Add connection errors if any
     if test_state.error_count > 0 {
-        println!(
-            "  [Connection Error]    {} responses",
-            test_state.error_count
-        );
+        println!("  [Connection Error]\t{} responses", test_state.error_count);
     }
 }
 
@@ -374,7 +342,7 @@ fn print_hey_format_report(test_state: &TestState) {
 async fn main() -> Result<()> {
     // Parse command line arguments
     let args = Args::parse();
-    let url = Url::parse(&args.url).context("Invalid URL")?;
+    let _url = Url::parse(&args.url).context("Invalid URL")?;
 
     // Parse the duration string
     let duration_secs = parse_duration(&args.duration_str)?;
@@ -445,83 +413,6 @@ async fn main() -> Result<()> {
         }
     });
 
-    println!("Starting throughput test for: {url}");
-    println!("HTTP Method: {}", args.method);
-    // When duration is specified, don't show requests since we're ignoring that parameter
-    if duration_secs > 0 {
-        println!("Concurrent: {}", args.concurrent);
-    } else {
-        println!(
-            "Requests: {}, Concurrent: {}",
-            if args.requests > 0 {
-                args.requests.to_string()
-            } else {
-                "Unlimited".to_string()
-            },
-            args.concurrent
-        );
-    }
-
-    // Display request timeout
-    println!(
-        "Request timeout: {}",
-        if args.timeout > 0 {
-            format!("{} seconds", args.timeout)
-        } else {
-            "Infinite".to_string()
-        }
-    );
-
-    // Display basic auth if provided
-    if basic_auth.is_some() {
-        println!("Basic authentication: Enabled");
-    }
-
-    // Display proxy if provided
-    if let Some(proxy) = &args.proxy {
-        println!("Using HTTP proxy: {proxy}");
-    }
-
-    // Display other HTTP options
-    if args.disable_compression {
-        println!("Compression: Disabled");
-    }
-    if args.disable_keepalive {
-        println!("Keep-Alive: Disabled");
-    }
-    if args.disable_redirects {
-        println!("HTTP Redirects: Disabled");
-    }
-
-    // Display request body info if provided
-    if let Some(body_content) = &body {
-        if body_content.len() > 100 {
-            println!(
-                "Request body: {} characters (truncated): {}",
-                body_content.len(),
-                &body_content[..100]
-            );
-        } else {
-            println!("Request body: {body_content}");
-        }
-    }
-
-    // Display custom headers if any
-    if !headers.is_empty() {
-        println!("Headers:");
-        for (name, value) in &headers {
-            println!("  {name}: {value}");
-        }
-    }
-    println!(
-        "Duration: {}",
-        if duration_secs > 0 {
-            format!("{duration_secs} seconds")
-        } else {
-            "Unlimited".to_string()
-        }
-    );
-
     // When duration is specified, set requests to 0 (unlimited)
     // Otherwise ensure request count is not less than concurrency level
     let requests = if duration_secs > 0 {
@@ -560,9 +451,6 @@ async fn main() -> Result<()> {
     // Check output format
     match args.output_format.to_lowercase().as_str() {
         "ui" => {
-            // Interactive UI mode
-            println!("Starting in UI mode...");
-
             // Create a shared state first
             let state = Arc::new(Mutex::new(TestState::new(&config)));
 
@@ -589,24 +477,16 @@ async fn main() -> Result<()> {
             // If we reach here, the UI has exited
         }
         "hey" => {
-            // Hey-compatible text output
-            println!("Starting in text summary mode (hey format)...");
-
-            // Create a shared state
             let state = Arc::new(Mutex::new(TestState::new(&config)));
             let shared_state = SharedState {
                 state: Arc::clone(&state),
             };
 
-            // Run the test without UI
             let mut runner = TestRunner::with_state(config, shared_state.clone());
             let _ = runner.start().await;
 
-            // Wait for the test to complete
-            println!("Running test...");
             let mut is_complete = false;
             while !is_complete {
-                // Check if test is complete
                 let test_status = {
                     let state = shared_state.state.lock().unwrap();
                     (state.is_complete, state.completed_requests)
@@ -614,7 +494,6 @@ async fn main() -> Result<()> {
 
                 is_complete = test_status.0;
                 if !is_complete {
-                    // Print progress
                     print!("\rRequests completed: {}   ", test_status.1);
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 }

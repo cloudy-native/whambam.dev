@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -82,8 +82,10 @@ impl App {
 
             if event::poll(timeout)? {
                 if let Event::Key(key) = event::read()? {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Char('q'), _)
+                        | (KeyCode::Esc, _)
+                        | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                             // Mark as quit but only hold the lock briefly
                             {
                                 let mut app_state = self.shared_state.state.lock().unwrap();
@@ -102,19 +104,19 @@ impl App {
                             // Exit the entire application
                             Self::should_exit();
                         }
-                        KeyCode::Char('h') | KeyCode::Char('?') => {
+                        (KeyCode::Char('h'), _) | (KeyCode::Char('?'), _) => {
                             self.ui_state.show_help = !self.ui_state.show_help;
                         }
-                        KeyCode::Char('1') => {
+                        (KeyCode::Char('1'), _) => {
                             self.ui_state.selected_tab = 0;
                         }
-                        KeyCode::Char('2') => {
+                        (KeyCode::Char('2'), _) => {
                             self.ui_state.selected_tab = 1;
                         }
-                        KeyCode::Char('3') => {
+                        (KeyCode::Char('3'), _) => {
                             self.ui_state.selected_tab = 2;
                         }
-                        KeyCode::Char('r') => {
+                        (KeyCode::Char('r'), _) => {
                             // Restart the test
                             let mut app_state = self.shared_state.state.lock().unwrap();
                             if app_state.is_complete {

@@ -265,8 +265,9 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     let stat_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50), // Throughput stats
-            Constraint::Percentage(50), // Latency stats
+            Constraint::Percentage(33), // Throughput stats
+            Constraint::Percentage(33), // Latency stats
+            Constraint::Percentage(34), // Byte stats
         ])
         .split(chunks[0]);
 
@@ -373,6 +374,61 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
 
     f.render_widget(latency_text, stat_chunks[1]);
 
+    // Byte stats
+    let format_bytes = |bytes: u64| -> String {
+        if bytes < 1024 {
+            format!("{bytes} B")
+        } else if bytes < 1024 * 1024 {
+            format!("{:.2} KB", bytes as f64 / 1024.0)
+        } else if bytes < 1024 * 1024 * 1024 {
+            format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
+        } else {
+            format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+        }
+    };
+
+    let byte_stats = [
+        format!("Bytes Sent: {}", format_bytes(app_state.total_bytes_sent)),
+        format!(
+            "Bytes Received: {}",
+            format_bytes(app_state.total_bytes_received)
+        ),
+        format!(
+            "Total Bytes: {}",
+            format_bytes(app_state.total_bytes_sent + app_state.total_bytes_received)
+        ),
+        format!(
+            "Avg Req Size: {}",
+            if completed > 0 {
+                format_bytes(app_state.total_bytes_sent / completed as u64)
+            } else {
+                "0 B".to_string()
+            }
+        ),
+        format!(
+            "Avg Resp Size: {}",
+            if completed > 0 {
+                format_bytes(app_state.total_bytes_received / completed as u64)
+            } else {
+                "0 B".to_string()
+            }
+        ),
+    ];
+
+    let byte_block = Block::default()
+        .title(Span::styled(
+            "Data Transfer snapshot",
+            Style::default().fg(Color::Magenta),
+        ))
+        .borders(Borders::ALL);
+
+    let byte_stats_str = byte_stats.join("\n");
+    let byte_text = Paragraph::new(byte_stats_str.as_str())
+        .style(Style::default().fg(Color::White))
+        .block(byte_block);
+
+    f.render_widget(byte_text, stat_chunks[2]);
+
     // Mini charts
     let chart_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -394,11 +450,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     let mini_x_max = throughput_data.last().map(|&(x, _)| x).unwrap_or(60.0);
     let mini_y_max = max_throughput * 1.1;
 
-    // Create throughput chart with small dot markers and fewer labels
+    // Create throughput chart with Braille markers and fewer labels
     let throughput_chart = create_throughput_chart(ChartConfig {
         data: &throughput_data,
         title: "Throughput over time",
-        marker: symbols::Marker::Dot,
+        marker: symbols::Marker::Braille,
         x_min: mini_x_min,
         x_max: mini_x_max,
         y_max: mini_y_max,
@@ -420,11 +476,11 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     let mini_lat_x_max = latency_data.last().map(|&(x, _)| x).unwrap_or(60.0);
     let mini_lat_y_max = max_latency * 1.1;
 
-    // Create latency chart with small dot markers and fewer labels
+    // Create latency chart with Braille markers and fewer labels
     let latency_chart = create_latency_chart(ChartConfig {
         data: &latency_data,
         title: "Latency over time",
-        marker: symbols::Marker::Dot,
+        marker: symbols::Marker::Braille,
         x_min: mini_lat_x_min,
         x_max: mini_lat_x_max,
         y_max: mini_lat_y_max,

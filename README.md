@@ -1,159 +1,234 @@
-# WhambBam
+# Whambam 🚀
 
-A feature-rich CLI tool for testing HTTP(S) endpoint throughput with an interactive terminal UI.
+An open-source, unobtrusive,lightning-fast CLI tool for HTTP(S) endpoint performance testing with a handy interactive terminal UI.
 
-Visit [whambam.dev](https://whambam.dev) for more information.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 
-## Features
+**Visit [whambam.dev](https://whambam.dev) for comprehensive documentation and examples.**
 
-- Test the throughput of any HTTP(S) endpoint
-- Configure number of requests and concurrent connections
-- Interactive terminal dashboard with real-time metrics
-- Live charts for throughput and latency visualization
-- Detailed breakdown by HTTP status code
-- Track successful vs failed requests with percentiles
-- Optional rate limiting for controlled load testing
+![Whambam Terminal UI](./docs/images/ui.png)
 
-## Installation
+## Why Whambam?
 
+The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void with:
+
+- Has **Drop-in compatibility** with hey's command-line arguments
+- Adds **Modern interactive UI** with real-time metrics and charts
+- Is **Actively maintained** and receives continuous improvements
+- Is a **clean-room implementation** in Rust for reliability and performance
+
+Built with the same terminal-focused philosophy that made hey popular, but designed for the modern development workflow.
+
+## ✨ Key Features
+
+### Performance Testing
+- **Blazing fast** HTTP(S) endpoint testing
+- **Configurable concurrency** and request counts
+- **Rate limiting** for controlled load testing
+- **Multiple HTTP methods** (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+- **Custom headers and authentication** support
+
+### Interactive Dashboard
+- **Real-time metrics** with live updates
+- **Beautiful charts** for throughput and latency visualization
+- **Status code breakdown** with color-coded responses
+- **Multiple view modes** (Dashboard, Charts, Status Codes)
+
+### Developer Experience
+- **hey-compatible** command-line interface
+- **Flexible output formats** (interactive UI or text summary)
+- **Comprehensive error handling** and timeout controls
+- **Proxy support** for complex network setups
+
+## 📦 Installation
+
+### Homebrew (Recommended)
+```bash
+# Add tap and install
+brew tap cloudy-native/whambam
+brew install whambam
+
+# Or install directly
+brew install cloudy-native/whambam/whambam
 ```
-cargo install whambam
+
+### From Source
+```bash
+git clone https://github.com/cloudy-native/whambam.git
+cd whambam
+cargo build --release
 ```
 
-Or install from source:
+## 🚀 Quick Start
 
+```bash
+# Basic performance test
+whambam https://example.com
+
+# Custom configuration
+whambam https://example.com -n 1000 -c 20
+
+# POST request with JSON payload
+whambam https://api.example.com/users \
+  -m POST \
+  -d '{"name":"Test User"}' \
+  -H "Content-Type: application/json"
+
+# Time-limited test with rate limiting
+whambam https://example.com -z 30s -q 100 -c 10
+
+# hey-compatible text output
+whambam https://example.com -n 100 -c 10 --output hey
 ```
-cargo install --path .
-```
 
-## Project Structure
+## 📖 Usage Reference
 
-```
-.
-├── src
-│   ├── main.rs            # Entry point with command-line argument parsing
-│   ├── tester
-│   │   ├── mod.rs        # Tester module exports
-│   │   ├── runner.rs     # Test runner implementation
-│   │   └── types.rs      # Core data types and shared state
-│   ├── ui
-│   │   ├── mod.rs        # UI module exports
-│   │   ├── app.rs        # Terminal UI application
-│   │   └── widgets.rs    # UI components and layouts
-│   └── tests             # Test modules
-└── Cargo.toml            # Rust project dependencies
-
-## Usage
-
-```
+```bash
 whambam <URL> [OPTIONS]
 ```
 
-### Options
+### Core Options
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-n, --requests <N>` | Number of requests to send | 200 |
+| `-c, --concurrent <N>` | Concurrent connections | 50 |
+| `-z, --duration <TIME>` | Test duration (e.g., 30s, 5m, 1h) | unlimited |
+| `-t, --timeout <SEC>` | Request timeout in seconds | 20 |
+| `-q, --rate-limit <QPS>` | Rate limit (queries per second) | unlimited |
 
-- `-n, --requests <REQUESTS>`: Number of requests to send (default: 200, 0 for unlimited)
-- `-c, --concurrent <CONCURRENT>`: Number of concurrent connections (default: 50)
-- `-z, --duration <DURATION>`: Duration to send requests (default: 0 for unlimited)  
-  When duration is reached, application stops and exits.  
-  If duration is specified, `-n` is ignored.  
-  Supports time units: `-z 10s` (seconds), `-z 3m` (minutes), `-z 1h` (hours)
-- `-t, --timeout <SECONDS>`: Timeout for each request in seconds (default: 20, 0 for infinite)
-- `-q, --rate-limit <RATE>`: Rate limit in queries per second (QPS) per worker (default: 0, no limit)
-- `-m, --method <METHOD>`: HTTP method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS) (default: GET)
-- `-A, --accept <HEADER>`: HTTP Accept header
-- `-a, --auth <AUTH>`: Basic authentication in username:password format
-- `-d, --body <BODY>`: HTTP request body
-- `-D, --body-file <FILE>`: HTTP request body from file
-- `-H, --header <HEADER>`: Custom HTTP headers (can be specified multiple times)
-- `-T, --content-type <TYPE>`: Content-Type header (default: "text/html")
-- `-x, --proxy <PROXY>`: HTTP Proxy address as host:port
-- `--disable-compression`: Disable compression
-- `--disable-keepalive`: Disable keep-alive, prevents re-use of TCP connections between different HTTP requests
-- `--disable-redirects`: Disable following of HTTP redirects
-- `-o, --output <FORMAT>`: Output format (default: ui)
-  - `ui`: Interactive terminal UI with real-time statistics
-  - `hey`: Text summary in a format similar to the hey tool
-- `-h, --help`: Print help
-- `-V, --version`: Print version
+### HTTP Configuration
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-m, --method <METHOD>` | HTTP method | GET |
+| `-d, --body <BODY>` | Request body | - |
+| `-D, --body-file <FILE>` | Request body from file | - |
+| `-H, --header <HEADER>` | Custom headers (repeatable) | - |
+| `-A, --accept <HEADER>` | Accept header | - |
+| `-T, --content-type <TYPE>` | Content-Type header | text/html |
+| `-a, --auth <USER:PASS>` | Basic authentication | - |
 
-**Note:** Total number of requests cannot be less than concurrency level. If specified with `-n`, it will be automatically increased to match the concurrency level.
+### Network Options
+| Option | Description |
+|--------|-------------|
+| `-x, --proxy <HOST:PORT>` | HTTP proxy |
+| `--disable-compression` | Disable compression |
+| `--disable-keepalive` | Disable connection reuse |
+| `--disable-redirects` | Disable redirect following |
 
-### Examples
+### Output Options
+| Option | Description |
+|--------|-------------|
+| `-o, --output <FORMAT>` | Output format: `ui` (default) or `hey` (text) |
 
-```
-# Basic usage with 500 requests and 50 concurrent connections
-whambam https://example.com -n 500 -c 50
+## 🎯 Interactive UI Guide
 
-# POST request with JSON body and custom headers
-whambam https://api.example.com/users -m POST -d '{"name":"Test User"}' -H "Content-Type: application/json" -H "Authorization: Bearer token123"
+### Navigation
+- **`1`, `2`, `3`**: Switch between Dashboard, Charts, and Status Codes tabs
+- **`h` or `?`**: Toggle help overlay
+- **`Ctrl-C`, `q`, or `ESC`**: Exit application
 
-# Time-limited test with custom timeout and rate limiting
-whambam https://example.com -z 30s -t 5 -q 100 -c 10
+### Dashboard Tab
+Real-time performance metrics including:
+- **Throughput**: Requests per second
+- **Success Rate**: Percentage of successful requests
+- **Response Times**: Min, max, and average latency
+- **Live Charts**: Visual representation of performance trends
 
-# Using basic authentication
-whambam https://secure-site.com -a username:password
-```
+### Charts Tab
+Full-screen visualization of:
+- **Throughput over time**
+- **Latency distribution**
+- **Request completion trends**
 
-## Interactive UI
+### Status Codes Tab
+Detailed breakdown of HTTP responses:
+- **Color-coded by status class** (2xx, 3xx, 4xx, 5xx)
+- **Percentage distribution**
+- **Real-time updates**
 
-The tool features a rich terminal UI with:
+## 🧪 Local Testing Setup
 
-1. **Dashboard Tab**
-   - Real-time throughput and request statistics
-   - Live charts for throughput and latency trends
-   - Key performance metrics (requests/sec, success rate)
-   
-2. **Charts Tab**
-   - Full-size charts for detailed visualization
-   - Time-series data for throughput and latency
-   
-3. **Status Codes Tab**
-   - Live breakdown of all HTTP status codes
-   - Percentage distribution of responses
-   - Color-coded by status class (2xx, 3xx, 4xx, 5xx)
+Quickly test your installation with a local HTTP server:
 
-### Keyboard Controls
-
-- `1`, `2`, `3`: Switch between tabs
-- `h` or `?`: Toggle help overlay
-- `q` or `ESC`: Quit the application (immediately returns to shell prompt)
-
-## Local Testing
-
-For local testing, you can easily set up a simple HTTP server using Node.js:
-
-1. Install the http-server package:
-
-```
+```bash
+# Install and start a simple HTTP server
 brew install http-server
-```
-
-2. Start the server in your current directory:
-
-```
 http-server .
-```
 
-3. Test against the local server:
-
-```
+# Test against local server
 whambam http://localhost:8080 -n 100 -c 10
 ```
 
-This provides a quick and easy way to test your installation and experiment with different options without making external requests.
+## 🏗️ Architecture
 
-## Final Report
+```
+src/
+├── main.rs              # CLI parsing and application entry point
+├── tester/
+│   ├── runner.rs        # Async HTTP test execution engine
+│   └── types.rs         # Core data structures and shared state
+├── ui/
+│   ├── app.rs          # Terminal UI application logic
+│   └── widgets.rs      # UI components and layouts
+└── tests/              # Comprehensive test suite
+    ├── cli_tests.rs
+    ├── runner_tests.rs
+    └── mock_server.rs
+```
 
-After completion, a detailed summary is displayed:
-- Total test duration and requests
-- Average throughput (requests/sec)
-- Latency statistics (min, max, p50, p90, p99)
-- Complete HTTP status code distribution
+## 🤖 AI-Powered Development
 
-## Contributing
+This project was built using [Claude Code](https://www.anthropic.com/claude-code), demonstrating effective AI-assisted development practices:
 
-Contributions are welcome! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more information.
+### Key Learnings
+1. **Always start with a plan** - Get AI to outline the approach before coding
+2. **Make incremental changes** - Small, testable steps prevent large rollbacks
+3. **Write tests eagerly** - Add comprehensive tests before major refactoring
+4. **Leverage AI for systemic changes** - AI excels at large-scale code transformations
+5. **Iterate and improve** - Don't hesitate to ask AI to fix its own mistakes
 
-## License
+### Development Stats
+- **Total AWS Bedrock cost**: $34.92
+- **Model used**: `us.anthropic.claude-3-7-sonnet-20250219-v1:0`
+- **Code split**: ~30% human-written structure, ~70% AI-generated implementation
+- **Test coverage**: Comprehensive suite with AI-generated tests
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+1. **Fork the repository**
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Make your changes** with tests
+4. **Run the test suite** (`cargo test`)
+5. **Submit a pull request**
+
+Please read our [Contributing Guidelines](CONTRIBUTING.md) for detailed information.
+
+## 📋 Roadmap
+
+- [ ] **WebSocket support** for real-time protocol testing
+- [ ] **Custom report generation** with exportable metrics
+- [ ] **Plugin system** for extended functionality
+- [ ] **Distributed testing** across multiple machines
+- [ ] **Performance regression detection**
+
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Inspired by the excellent [hey](https://github.com/rakyll/hey) tool
+- Built with [Claude Code](https://www.anthropic.com/claude-code) AI assistance
+- Thanks to the Rust community for excellent HTTP libraries
+
+---
+
+**Ready to test your APIs?** Install whambam and start performance testing in seconds!
+
+```bash
+brew install cloudy-native/whambam/whambam
+whambam https://your-api.com
+```

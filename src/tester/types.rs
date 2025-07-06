@@ -90,6 +90,8 @@ pub struct RequestMetric {
     pub latency_ms: f64,
     pub status_code: u16,
     pub is_error: bool,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
 }
 
 /// Messages sent between testing and UI threads
@@ -143,6 +145,10 @@ pub struct TestState {
     pub is_complete: bool,
     pub should_quit: bool,
     pub end_time: Option<Instant>,
+
+    // Byte tracking
+    pub total_bytes_sent: u64,
+    pub total_bytes_received: u64,
 }
 
 impl TestState {
@@ -180,6 +186,10 @@ impl TestState {
         self.is_complete = false;
         self.should_quit = false;
         self.end_time = None;
+
+        // Reset byte tracking
+        self.total_bytes_sent = 0;
+        self.total_bytes_received = 0;
     }
 
     pub fn new(config: &TestConfig) -> Self {
@@ -219,12 +229,19 @@ impl TestState {
             is_complete: false,
             should_quit: false,
             end_time: None,
+
+            total_bytes_sent: 0,
+            total_bytes_received: 0,
         }
     }
 
     pub fn update(&mut self, metric: RequestMetric) {
         // Update counters
         self.completed_requests += 1;
+
+        // Update byte counters
+        self.total_bytes_sent += metric.bytes_sent;
+        self.total_bytes_received += metric.bytes_received;
 
         // Always update status counts with the status code
         if metric.status_code > 0 {

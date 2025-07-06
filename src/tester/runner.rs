@@ -176,6 +176,34 @@ impl TestRunner {
                     // Make the request with specified method
                     let request_start = Instant::now();
 
+                    // Calculate bytes sent (approximate) - before moving url_clone
+                    let bytes_sent = {
+                        let mut total = 0u64;
+
+                        // Add method and path bytes
+                        total += config.method.to_string().len() as u64;
+                        total += url_clone.path().len() as u64;
+                        if let Some(query) = url_clone.query() {
+                            total += query.len() as u64;
+                        }
+
+                        // Add header bytes
+                        for (name, value) in &headers_clone {
+                            total += name.len() as u64 + value.len() as u64 + 4;
+                            // ": " + "\r\n"
+                        }
+
+                        // Add body bytes
+                        if let Some(body) = &body_clone {
+                            total += body.len() as u64;
+                        }
+
+                        // Add basic HTTP overhead (HTTP/1.1, Host header, etc.)
+                        total += 50; // Approximate overhead
+
+                        total
+                    };
+
                     // Create the request builder based on method
                     let mut request_builder = match config.method {
                         HttpMethod::GET => client_clone.get(url_clone),
@@ -220,11 +248,19 @@ impl TestRunner {
                             let status_class = status / 100;
                             let is_error = status_class != 2; // Consider non-2xx as errors
 
+                            // Calculate bytes received
+                            let bytes_received = match resp.bytes().await {
+                                Ok(bytes) => bytes.len() as u64,
+                                Err(_) => 0,
+                            };
+
                             RequestMetric {
                                 timestamp: start_time.elapsed().as_fractional_secs(),
                                 latency_ms: duration.as_fractional_millis(),
                                 status_code: status,
                                 is_error,
+                                bytes_sent,
+                                bytes_received,
                             }
                         }
                         Err(_) => RequestMetric {
@@ -232,6 +268,8 @@ impl TestRunner {
                             latency_ms: duration.as_fractional_millis(),
                             status_code: 0,
                             is_error: true,
+                            bytes_sent,
+                            bytes_received: 0,
                         },
                     };
 
@@ -318,6 +356,32 @@ pub fn print_final_report(test_state: &TestState) {
         "Error Count: {} ({:.2}%)",
         test_state.error_count,
         100.0 * test_state.error_count as f64 / test_state.completed_requests.max(1) as f64
+    );
+
+    // Format bytes function
+    let format_bytes = |bytes: u64| -> String {
+        if bytes < 1024 {
+            format!("{bytes} B")
+        } else if bytes < 1024 * 1024 {
+            format!("{:.2} KB", bytes as f64 / 1024.0)
+        } else if bytes < 1024 * 1024 * 1024 {
+            format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
+        } else {
+            format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+        }
+    };
+
+    println!(
+        "Total Bytes Sent: {}",
+        format_bytes(test_state.total_bytes_sent)
+    );
+    println!(
+        "Total Bytes Received: {}",
+        format_bytes(test_state.total_bytes_received)
+    );
+    println!(
+        "Total Bytes: {}",
+        format_bytes(test_state.total_bytes_sent + test_state.total_bytes_received)
     );
 
     // Helper function to format latency with appropriate units and hide trailing zeros
