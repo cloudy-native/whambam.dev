@@ -5,36 +5,57 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
-  release:
-    runs-on: macos-latest
+  build:
+    strategy:
+      matrix:
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13  # Intel runner
+          - target: aarch64-apple-darwin
+            os: macos-14  # ARM runner
+    
+    runs-on: ${{ matrix.os }}
+    
     steps:
       - uses: actions/checkout@v4
+      
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
+          targets: ${{ matrix.target }}
       
-      - name: Build Intel
-        run: cargo build --release --target x86_64-apple-darwin
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
       
-      - name: Build ARM
-        run: cargo build --release --target aarch64-apple-darwin
-      
-      - name: Package Intel
+      - name: Package
         run: |
-          mkdir -p whambam-intel
-          cp target/x86_64-apple-darwin/release/whambam whambam-intel/
-          tar -czf whambam-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz -C whambam-intel whambam
+          mkdir -p whambam-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/whambam whambam-${{ matrix.target }}/
+          tar -czf whambam-${{ github.ref_name }}-${{ matrix.target }}.tar.gz -C whambam-${{ matrix.target }} whambam
       
-      - name: Package ARM
-        run: |
-          mkdir -p whambam-arm
-          cp target/aarch64-apple-darwin/release/whambam whambam-arm/
-          tar -czf whambam-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz -C whambam-arm whambam
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whambam-${{ matrix.target }}
+          path: whambam-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
       
-      - name: Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            whambam-${{ github.ref_name }}-x86_64-apple-darwin.tar.gz
-            whambam-${{ github.ref_name }}-aarch64-apple-darwin.tar.gz
+          files: artifacts/*/whambam-*.tar.gz
