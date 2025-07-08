@@ -16,6 +16,10 @@ categories = ["command-line-utilities"]
 name = "whambam"
 path = "src/main.rs"
 
+[[bin]]
+name = "whambam_optimized"
+path = "src/bin/whambam_optimized.rs"
+
 
 
 [dependencies]

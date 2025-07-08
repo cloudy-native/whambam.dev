@@ -4,7 +4,8 @@
       "Bash(ls -la)",
       "Bash(mkdir -p src)",
       "Bash(cargo run -- https://httpbin.org/get -n 50 -c 10 -o hey)",
-      "Bash(python -m http.server 8080)"
+      "Bash(python -m http.server 8080)",
+      "Bash(cargo check)"
     ],
     "deny": []
   }

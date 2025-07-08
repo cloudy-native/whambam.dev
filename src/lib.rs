@@ -32,6 +32,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
+pub mod args;
 pub mod tester;
 pub mod ui;
 
