@@ -26,9 +26,9 @@ impl std::fmt::Display for HttpMethods {
 
 #[derive(Debug, Parser)]
 #[command(
-    author, 
-    version, 
-    about, 
+    author,
+    version,
+    about,
     long_about = "A modern HTTP load testing tool with an interactive UI"
 )]
 pub struct Args {

@@ -3,9 +3,11 @@ mod runner_optimized;
 mod types;
 mod worker_pool;
 
-// Export original implementation
-pub use runner::*;
-// Export optimized implementation
-pub use runner_optimized::TestRunner as OptimizedTestRunner;
+// Export all common types
 pub use types::*;
-pub use worker_pool::*;
+
+// Export the runner implementation
+pub use runner::{print_final_report, TestRunner};
+
+// Export specific items from worker_pool when needed
+// pub use worker_pool::WorkerPool;

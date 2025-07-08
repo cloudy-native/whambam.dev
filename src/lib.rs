@@ -27,9 +27,12 @@
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use std::{fs, io::{self, Write}};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::{
+    fs,
+    io::{self, Write},
+};
 use url::Url;
 
 pub mod args;
@@ -38,8 +41,6 @@ pub mod ui;
 
 #[cfg(test)]
 pub mod tests;
-
-
 
 use tester::{HttpMethod, SharedState, TestConfig, TestRunner, TestState};
 use ui::App;
@@ -155,7 +156,9 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
             if num_part.is_empty() {
                 return Err(anyhow!("Duration is missing a number."));
             }
-            let num = num_part.parse::<u64>().map_err(|_| anyhow!("Invalid number in duration"))?;
+            let num = num_part
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid number in duration"))?;
             match last_char {
                 Some('s') => Ok(num),
                 Some('m') => Ok(num * 60),
@@ -165,7 +168,9 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         }
         _ => {
             // Assume the whole string is a number representing seconds.
-            duration_str.parse::<u64>().map_err(|_| anyhow!("Invalid duration format"))
+            duration_str
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid duration format"))
         }
     }
 }
@@ -213,8 +218,20 @@ fn print_hey_format_report<W: Write>(w: &mut W, test_state: &TestState) -> io::R
     writeln!(w, "  Average:\t{:.4} secs", avg_latency / 1000.0)?;
     writeln!(w, "  Requests/sec:\t{overall_tps:.4}")?;
     writeln!(w)?;
-    writeln!(w, "  Total data:\t{} bytes", test_state.total_bytes_received)?;
-    writeln!(w, "  Size/request:\t{} bytes", if total_requests > 0 { test_state.total_bytes_received / total_requests as u64 } else { 0 })?;
+    writeln!(
+        w,
+        "  Total data:\t{} bytes",
+        test_state.total_bytes_received
+    )?;
+    writeln!(
+        w,
+        "  Size/request:\t{} bytes",
+        if total_requests > 0 {
+            test_state.total_bytes_received / total_requests as u64
+        } else {
+            0
+        }
+    )?;
 
     writeln!(w, "\nResponse time histogram:")?;
 
@@ -317,7 +334,11 @@ fn print_hey_format_report<W: Write>(w: &mut W, test_state: &TestState) -> io::R
     }
 
     if test_state.error_count > 0 {
-        writeln!(w, "  [Connection Error]\t{} responses", test_state.error_count)?;
+        writeln!(
+            w,
+            "  [Connection Error]\t{} responses",
+            test_state.error_count
+        )?;
     }
     Ok(())
 }
@@ -388,17 +409,24 @@ pub async fn run(args: Args) -> Result<()> {
         disable_redirects: args.disable_redirects,
         interactive: args.output_format.to_lowercase() == "ui",
         output_format: args.output_format.clone(),
-                content_type: args.content_type.clone(),
+        content_type: args.content_type.clone(),
         proxy: args.proxy.clone(),
     };
 
     let shared_state = Arc::new(Mutex::new(TestState::new(&config)));
 
     if config.interactive {
-        let mut app = App::new(SharedState { state: shared_state });
+        let mut app = App::new(SharedState {
+            state: shared_state,
+        });
         app.run()?;
     } else {
-        let mut test_runner = TestRunner::with_state(config, SharedState { state: shared_state.clone() });
+        let mut test_runner = TestRunner::with_state(
+            config,
+            SharedState {
+                state: shared_state.clone(),
+            },
+        );
         test_runner.start().await?;
         // Wait for the test to complete. A better mechanism would be to wait on a signal.
         tokio::time::sleep(tokio::time::Duration::from_secs(duration_secs + 1)).await;

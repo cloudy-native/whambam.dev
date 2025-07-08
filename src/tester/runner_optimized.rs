@@ -78,7 +78,10 @@ impl TestRunner {
         let state_clone = Arc::clone(&self.shared_state.state);
 
         // Use the existing receiver
-        let mut rx = std::mem::replace(&mut self.rx, mpsc::channel::<Message>(config.concurrent * 2).1);
+        let mut rx = std::mem::replace(
+            &mut self.rx,
+            mpsc::channel::<Message>(config.concurrent * 2).1,
+        );
 
         // Spawn load test task
         let _load_test_handle = tokio::spawn(async move {
@@ -90,7 +93,7 @@ impl TestRunner {
                     return;
                 }
             };
-            
+
             // Calculate test parameters
             let start_time = Instant::now();
             let max_requests = if config.requests > 0 {
@@ -103,7 +106,7 @@ impl TestRunner {
             } else {
                 None
             };
-            
+
             // Submit all jobs to the worker pool
             let mut submitted_jobs = 0;
             for _ in 0..max_requests {
@@ -117,7 +120,7 @@ impl TestRunner {
                         break;
                     }
                 }
-                
+
                 // Create job
                 let job = RequestJob {
                     url: url.clone(),
@@ -128,22 +131,22 @@ impl TestRunner {
                     timeout: config.timeout,
                     start_time,
                 };
-                
+
                 // Submit job
                 if let Err(e) = worker_pool.submit_job(job).await {
                     eprintln!("Failed to submit job: {}", e);
                     break;
                 }
-                
+
                 submitted_jobs += 1;
             }
-            
+
             // Shut down the worker pool
             worker_pool.stop();
-            
+
             // Signal that we're done
             let _ = tx.send(Message::TestComplete).await;
-            
+
             // Wait for worker pool to complete
             worker_pool.wait().await;
         });
