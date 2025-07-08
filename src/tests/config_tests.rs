@@ -1,23 +1,3 @@
-// Copyright (c) 2025 Stephen Harrison
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
 use crate::tester::{HttpMethod, RequestMetric, TestConfig, TestState};
 use std::time::Instant;
 
@@ -39,8 +19,8 @@ fn test_test_config_initialization() {
         disable_compression: true,
         disable_keepalive: true,
         disable_redirects: true,
-        interactive: false,
-        output_format: "hey".to_string(),
+        interactive: true,
+        output_format: "ui".to_string(),
     };
 
     assert_eq!(config.url, "http://example.com");
@@ -83,8 +63,8 @@ fn test_test_state_initialization() {
         disable_compression: true,
         disable_keepalive: true,
         disable_redirects: true,
-        interactive: false,
-        output_format: "hey".to_string(),
+        interactive: true,
+        output_format: "ui".to_string(),
     };
 
     let test_state = TestState::new(&config);
@@ -132,8 +112,8 @@ fn test_test_state_update() {
         disable_compression: false,
         disable_keepalive: false,
         disable_redirects: false,
-        interactive: false,
-        output_format: "hey".to_string(),
+        interactive: true,
+        output_format: "ui".to_string(),
     };
 
     let mut test_state = TestState::new(&config);
@@ -203,8 +183,8 @@ fn test_test_state_reset() {
         disable_compression: false,
         disable_keepalive: false,
         disable_redirects: false,
-        interactive: false,
-        output_format: "hey".to_string(),
+        interactive: true,
+        output_format: "ui".to_string(),
     };
 
     let mut test_state = TestState::new(&config);
