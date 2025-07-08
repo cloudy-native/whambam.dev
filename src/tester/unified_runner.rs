@@ -12,27 +12,45 @@ use tokio::sync::mpsc;
 use url::Url;
 
 use super::metrics::SharedMetrics;
-use super::types::{HttpMethod, Message, RequestMetric, TestConfig};
+use super::types::{HttpMethod, Message, RequestMetric, SharedState, TestConfig, TestState};
 
-/// The optimized test runner with lock-free metrics collection
-pub struct OptimizedRunner {
+/// Unified runner implementation that combines worker pool and lock-free metrics
+pub struct UnifiedRunner {
     config: TestConfig,
     metrics: SharedMetrics,
+    shared_state: Option<SharedState>,
     is_running: Arc<AtomicBool>,
     tx: mpsc::Sender<Message>,
     rx: mpsc::Receiver<Message>,
 }
 
-impl OptimizedRunner {
-    /// Create a new optimized runner with the given configuration
+impl UnifiedRunner {
+    /// Create a new unified runner with the given configuration
     pub fn new(config: TestConfig) -> Self {
         let (tx, rx) = mpsc::channel::<Message>(config.concurrent * 2);
         let is_running = Arc::new(AtomicBool::new(true));
         let metrics = SharedMetrics::new(config.url.clone(), config.method.to_string());
 
-        OptimizedRunner {
+        UnifiedRunner {
             config,
             metrics,
+            shared_state: None,
+            is_running,
+            tx,
+            rx,
+        }
+    }
+
+    /// Create a new unified runner with the given configuration and shared state
+    pub fn with_state(config: TestConfig, shared_state: SharedState) -> Self {
+        let (tx, rx) = mpsc::channel::<Message>(config.concurrent * 2);
+        let is_running = Arc::new(AtomicBool::new(true));
+        let metrics = SharedMetrics::new(config.url.clone(), config.method.to_string());
+
+        UnifiedRunner {
+            config,
+            metrics,
+            shared_state: Some(shared_state),
             is_running,
             tx,
             rx,
@@ -138,18 +156,43 @@ impl OptimizedRunner {
         // Spawn metrics processing task
         let metrics_clone = self.metrics.clone();
         let metrics_tx = self.tx.clone();
+        let shared_state = self.shared_state.clone();
+
         let _metrics_handle = tokio::spawn(async move {
             // Efficiently process batched metrics from job channel
             while let Some(metric) = job_rx.recv().await {
                 // Record the metric in the lock-free collector
                 metrics_clone.record(&metric);
 
-                // Process any queued metrics every 100 messages
+                // If we have a shared state, update it as well for UI compatibility
+                if let Some(state) = &shared_state {
+                    let mut guard = state.state.lock().unwrap();
+                    guard.update(metric.clone());
+                }
+
+                // Send the message for any listeners
                 let _ = metrics_tx.send(Message::RequestComplete(metric)).await;
             }
 
             // Do a final metrics processing
             metrics_clone.process_metrics();
+        });
+
+        // Start metrics processor task
+        let metrics_ref = self.metrics.metrics.clone();
+        let _processor_handle = tokio::spawn(async move {
+            while !metrics_ref.is_complete() {
+                // Process queued metrics periodically
+                metrics_ref.process_queued_metrics();
+                metrics_ref.update_statistics();
+
+                // Sleep a bit to reduce CPU usage
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+
+            // Final processing
+            metrics_ref.process_queued_metrics();
+            metrics_ref.update_statistics();
         });
 
         Ok(())
@@ -547,5 +590,75 @@ pub fn print_final_report(metrics: &SharedMetrics) {
         let count = *status_counts.get(&status).unwrap_or(&0);
         let percentage = 100.0 * count as f64 / metrics_ref.completed_requests().max(1) as f64;
         println!("  HTTP {status}: {count} ({percentage:.2}%)");
+    }
+}
+
+/// Generate a final report in 'hey' format for compatibility
+pub fn print_hey_format_report(metrics: &SharedMetrics) {
+    let metrics_ref = metrics.metrics.clone();
+
+    // Process any queued metrics
+    metrics_ref.process_queued_metrics();
+    metrics_ref.update_statistics();
+
+    // Calculate overall elapsed time
+    let elapsed = metrics_ref.elapsed_seconds();
+    let req_per_sec = if elapsed > 0.0 {
+        metrics_ref.completed_requests() as f64 / elapsed
+    } else {
+        0.0
+    };
+
+    let bytes_per_sec = if elapsed > 0.0 {
+        metrics_ref.bytes_received() as f64 / elapsed
+    } else {
+        0.0
+    };
+
+    println!("\nSummary:");
+    println!("  Total:\t{:.4} secs", elapsed);
+    println!("  Slowest:\t{:.4} secs", metrics_ref.max_latency() / 1000.0);
+    println!("  Fastest:\t{:.4} secs", metrics_ref.min_latency() / 1000.0);
+    println!("  Average:\t{:.4} secs", metrics_ref.p50_latency() / 1000.0);
+    println!("  Requests/sec:\t{:.4}", req_per_sec);
+
+    // Transfer rate
+    if bytes_per_sec >= 1024.0 * 1024.0 {
+        println!(
+            "  Transfer/sec:\t{:.2} MB",
+            bytes_per_sec / (1024.0 * 1024.0)
+        );
+    } else if bytes_per_sec >= 1024.0 {
+        println!("  Transfer/sec:\t{:.2} KB", bytes_per_sec / 1024.0);
+    } else {
+        println!("  Transfer/sec:\t{:.2} B", bytes_per_sec);
+    }
+
+    println!("\nLatency distribution:");
+    println!("  10% in {:.4} secs", metrics_ref.p50_latency() / 2000.0);
+    println!("  25% in {:.4} secs", metrics_ref.p50_latency() / 1500.0);
+    println!("  50% in {:.4} secs", metrics_ref.p50_latency() / 1000.0);
+    println!("  75% in {:.4} secs", metrics_ref.p90_latency() / 1000.0);
+    println!("  90% in {:.4} secs", metrics_ref.p90_latency() / 1000.0);
+    println!("  95% in {:.4} secs", metrics_ref.p95_latency() / 1000.0);
+    println!("  99% in {:.4} secs", metrics_ref.p99_latency() / 1000.0);
+
+    println!("\nHTTP response status codes:");
+    let status_counts = metrics_ref.status_counts();
+    let mut status_codes: Vec<u16> = status_counts.keys().cloned().collect();
+    status_codes.sort();
+
+    for status in status_codes {
+        let count = *status_counts.get(&status).unwrap_or(&0);
+        let percentage = 100.0 * count as f64 / metrics_ref.completed_requests().max(1) as f64;
+        println!("  [{status}] {count} responses ({percentage:.2}%)");
+    }
+
+    // Add connection errors if any
+    let error_count = metrics_ref.error_count();
+    if error_count > 0 && !status_counts.contains_key(&0) {
+        let percentage =
+            100.0 * error_count as f64 / metrics_ref.completed_requests().max(1) as f64;
+        println!("  [connection errors] {error_count} responses ({percentage:.2}%)");
     }
 }

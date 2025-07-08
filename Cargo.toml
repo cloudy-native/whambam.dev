@@ -24,6 +24,10 @@ path = "src/bin/whambam_optimized.rs"
 name = "whambam_lockfree"
 path = "src/bin/whambam_lockfree.rs"
 
+[[bin]]
+name = "whambam_unified"
+path = "src/bin/whambam_unified.rs"
+
 
 
 [dependencies]

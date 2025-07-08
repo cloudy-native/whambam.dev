@@ -5,13 +5,16 @@ use std::path::Path;
 use std::time::Instant;
 use url::Url;
 
-use whambam::tester::{optimized_print_final_report, HttpMethod, OptimizedRunner, TestConfig};
+use whambam::tester::{
+    print_hey_format_report, unified_print_final_report, HttpMethod, SharedMetrics, TestConfig,
+    UnifiedRunner,
+};
 
 #[derive(Parser, Clone, Debug)]
 #[command(
     author,
     version,
-    about = "HTTP load testing tool with lock-free metrics"
+    about = "HTTP load testing tool with unified optimizations"
 )]
 struct Args {
     /// The URL to test
@@ -202,14 +205,14 @@ async fn main() -> Result<()> {
         proxy: args.proxy.clone(),
     };
 
-    // Create optimized runner with lock-free metrics
-    let mut runner = OptimizedRunner::new(config);
+    // Create unified runner with worker pool and lock-free metrics
+    let mut runner = UnifiedRunner::new(config);
 
     // Get metrics before starting
     let metrics = runner.metrics();
 
     // Print information about the test
-    println!("Running optimized test with lock-free metrics collection");
+    println!("Running unified test with worker pool and lock-free metrics collection");
     println!("URL: {}", url);
     println!("Concurrency: {}", args.concurrent);
     if requests > 0 {
@@ -249,8 +252,12 @@ async fn main() -> Result<()> {
         start.elapsed().as_secs_f64()
     );
 
-    // Print the final report
-    optimized_print_final_report(&metrics);
+    // Print the final report in the selected format
+    if args.output_format.to_lowercase() == "hey" {
+        print_hey_format_report(&metrics);
+    } else {
+        unified_print_final_report(&metrics);
+    }
 
     Ok(())
 }
