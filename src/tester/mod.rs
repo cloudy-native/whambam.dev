@@ -2,12 +2,15 @@ mod runner;
 mod runner_optimized;
 mod types;
 mod worker_pool;
+mod metrics;
+mod optimized_runner;
 
 // Export all common types
 pub use types::*;
 
-// Export the runner implementation
+// Export the runner implementations
 pub use runner::{print_final_report, TestRunner};
+pub use optimized_runner::{OptimizedRunner, print_final_report as optimized_print_final_report};
 
-// Export specific items from worker_pool when needed
-// pub use worker_pool::WorkerPool;
+// Export metrics collector
+pub use metrics::{LockFreeMetrics, SharedMetrics};

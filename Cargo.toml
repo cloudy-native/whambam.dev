@@ -20,6 +20,10 @@ path = "src/main.rs"
 name = "whambam_optimized"
 path = "src/bin/whambam_optimized.rs"
 
+[[bin]]
+name = "whambam_lockfree"
+path = "src/bin/whambam_lockfree.rs"
+
 
 
 [dependencies]
@@ -39,6 +43,8 @@ tui-logger = "0.9.6"
 log = "0.4"
 floating-duration = "0.1.2"
 hdrhistogram = "7.5.2"
+parking_lot = "0.12.1"
+crossbeam-queue = "0.3.8"
 
 [features]
 vendored-openssl = ["openssl/vendored"]
