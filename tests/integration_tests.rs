@@ -18,8 +18,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-mod runner;
-mod types;
 
-pub use runner::*;
-pub use types::*;
+
+use assert_cmd::prelude::*;
+use predicates::str::contains;
+use std::process::Command;
+use test_utils::MockServer;
+
+#[tokio::test]
+async fn test_hey_format_output_integration() {
+    let server = MockServer::start().await;
+
+    let mut cmd = Command::cargo_bin("whambam").unwrap();
+    cmd.arg(server.url())
+        .arg("-n")
+        .arg("10")
+        .arg("-c")
+        .arg("2")
+        .arg("-o")
+        .arg("hey");
+
+    cmd.assert()
+        .success()
+        .stdout(contains("Summary:"))
+        .stdout(contains("Total:"))
+        .stdout(contains("Requests/sec:"))
+        .stdout(contains("Status code distribution:"));
+}

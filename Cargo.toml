@@ -16,6 +16,8 @@ categories = ["command-line-utilities"]
 name = "whambam"
 path = "src/main.rs"
 
+
+
 [dependencies]
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls"], default-features = false }
 openssl = { version = "0.10", optional = true }
@@ -44,4 +46,9 @@ sign-tag = false
 pre-release-commit-message = "Release {{version}}"
 tag-message = "Release {{version}}"
 tag-name = "v{{version}}"
+
+[dev-dependencies]
+test-utils = { path = "test-utils" }
+assert_cmd = "2.0"
+predicates = "3.0"
 

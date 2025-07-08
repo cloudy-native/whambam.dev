@@ -1,6 +1,6 @@
 # Whambam 🚀
 
-An open-source, unobtrusive,lightning-fast CLI tool for HTTP(S) endpoint performance testing with a handy interactive terminal UI.
+An open-source, unobtrusive, lightning-fast CLI tool for HTTP(S) endpoint performance testing with a handy interactive terminal UI.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -14,9 +14,11 @@ An open-source, unobtrusive,lightning-fast CLI tool for HTTP(S) endpoint perform
 ## Why Whambam?
 
 ```
-Warning: Some installed formulae are deprecated or disabled.
-You should find replacements for the following formulae:
-  hey
+$ brew info hey
+==> hey: stable 0.1.4 (bottled)
+HTTP load generator, ApacheBench (ab) replacement
+https://github.com/rakyll/hey
+Deprecated because it is not maintained upstream! It will be disabled on 2026-01-12.
 ```
 
 The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void:
@@ -26,7 +28,7 @@ The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer 
 - Is **Actively maintained** and receives continuous improvements
 - Is a **clean-room implementation** in Rust for reliability and performance
 
-Built with the same terminal-focused philosophy that made hey popular, but designed for the modern development workflow.
+Built with the same terminal-focused philosophy that made hey popular, and designed for the modern development workflow.
 
 ## ✨ Key Features
 
@@ -65,7 +67,7 @@ brew install cloudy-native/whambam/whambam
 ```bash
 git clone https://github.com/cloudy-native/whambam.dev.git
 cd whambam.dev
-cargo build --release
+cargo build ...
 ```
 
 ## 🚀 Quick Start
@@ -187,10 +189,10 @@ src/
 
 ## 🤖 AI-Powered Development
 
-This project was built using [Claude Code](https://www.anthropic.com/claude-code), demonstrating effective AI-assisted development practices:
+This project was built in collaboration with [Claude Code](https://www.anthropic.com/claude-code), demonstrating effective AI-assisted development practices:
 
 ### Key Learnings
-1. **Always start with a plan** - Get AI to outline the approach before coding
+1. **Always start with a plan** - Get AI to outline the approach before letting it write a line of code
 2. **Make incremental changes** - Small, testable steps prevent large rollbacks
 3. **Write tests eagerly** - Add comprehensive tests before major refactoring
 4. **Leverage AI for systemic changes** - AI excels at large-scale code transformations
@@ -198,7 +200,7 @@ This project was built using [Claude Code](https://www.anthropic.com/claude-code
 
 ### Development Stats
 - **Total AWS Bedrock cost**: $34.92
-- **Model used**: `us.anthropic.claude-3-7-sonnet-20250219-v1:0`
+- **AWS Bedrock model used**: `us.anthropic.claude-3-7-sonnet-20250219-v1:0`
 - **Code split**: ~30% human-written structure, ~70% AI-generated implementation
 - **Test coverage**: Comprehensive suite with AI-generated tests
 
@@ -214,14 +216,6 @@ We welcome contributions! Here's how to get started:
 
 Please read our [Contributing Guidelines](CONTRIBUTING.md) for detailed information.
 
-## 📋 Roadmap
-
-- [ ] **WebSocket support** for real-time protocol testing
-- [ ] **Custom report generation** with exportable metrics
-- [ ] **Plugin system** for extended functionality
-- [ ] **Distributed testing** across multiple machines
-- [ ] **Performance regression detection**
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -230,13 +224,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Inspired by the excellent [hey](https://github.com/rakyll/hey) tool
 - Built with [Claude Code](https://www.anthropic.com/claude-code) AI assistance
-- Thanks to the Rust community for excellent HTTP libraries
-
----
-
-**Ready to test your APIs?** Install whambam and start performance testing in seconds!
-
-```bash
-brew install cloudy-native/whambam/whambam
-whambam https://your-api.com
-```
+- Thanks to the Rust community for excellent libraries, tools, and ecosystem 
