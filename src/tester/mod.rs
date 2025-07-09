@@ -28,7 +28,7 @@ mod unified_runner;
 pub use types::*;
 
 // Export the unified runner implementation
-pub use unified_runner::{print_final_report, UnifiedRunner};
+pub use unified_runner::UnifiedRunner;
 
 // Export metrics collector
 pub use metrics::SharedMetrics;

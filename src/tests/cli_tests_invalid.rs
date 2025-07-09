@@ -159,16 +159,12 @@ fn test_args_extreme_values() {
 }
 
 #[test]
-fn test_args_output_format_validation() {
-    // Test valid output formats
-    let args_ui = Args::parse_from(["test", "http://example.com", "-o", "ui"]);
-    assert_eq!(args_ui.output_format, "ui");
+fn test_args_no_ui_flag() {
+    // Test default (UI mode)
+    let args_default = Args::parse_from(["test", "http://example.com"]);
+    assert!(!args_default.no_ui);
 
-    let args_hey = Args::parse_from(["test", "http://example.com", "-o", "hey"]);
-    assert_eq!(args_hey.output_format, "hey");
-
-    // Invalid output formats are accepted at parsing time
-    // but would be validated at runtime
-    let args_invalid = Args::parse_from(["test", "http://example.com", "-o", "invalid"]);
-    assert_eq!(args_invalid.output_format, "invalid");
+    // Test explicit no-ui flag
+    let args_no_ui = Args::parse_from(["test", "http://example.com", "--no-ui"]);
+    assert!(args_no_ui.no_ui);
 }

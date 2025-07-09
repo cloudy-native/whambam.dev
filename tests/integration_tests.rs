@@ -24,7 +24,7 @@ use std::process::Command;
 use test_utils::MockServer;
 
 #[tokio::test]
-async fn test_hey_format_output_integration() {
+async fn test_no_ui_option_integration() {
     let server = MockServer::start().await;
 
     let mut cmd = Command::cargo_bin("whambam").unwrap();
@@ -33,13 +33,10 @@ async fn test_hey_format_output_integration() {
         .arg("10")
         .arg("-c")
         .arg("2")
-        .arg("-o")
-        .arg("hey");
+        .arg("--no-ui");
 
     cmd.assert()
         .success()
-        .stdout(contains("Summary:"))
-        .stdout(contains("Total:"))
-        .stdout(contains("Requests/sec:"))
-        .stdout(contains("Status code distribution:"));
+        .stdout(contains("The --no-ui option is currently not supported."))
+        .stdout(contains("The UI interface is required for this version."));
 }

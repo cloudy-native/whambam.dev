@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="32" height="32" rx="4" fill="#0052cc"/>
+  
+  <!-- Motion lines -->
+  <path d="M2 16 L30 16" stroke="rgba(255,255,255,0.3)" stroke-width="0.5" stroke-dasharray="2,1"/>
+  <path d="M2 12 L30 12" stroke="rgba(255,255,255,0.2)" stroke-width="0.5" stroke-dasharray="2,1"/>
+  <path d="M2 20 L30 20" stroke="rgba(255,255,255,0.2)" stroke-width="0.5" stroke-dasharray="2,1"/>
+  
+  <!-- Fast W -->
+  <path d="M6 10 L9 22 L12 14 L15 22 L18 10" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <animate attributeName="stroke-dashoffset" from="100" to="0" dur="0.5s"/>
+  </path>
+  
+  <!-- Fast B -->
+  <path d="M19 10 L19 22 M19 10 C25 10 25 16 19 16 C26 16 26 22 19 22" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <animate attributeName="stroke-dashoffset" from="100" to="0" dur="0.5s"/>
+  </path>
+  
+  <!-- Motion blur effects -->
+  <path d="M4 10 L20 10" stroke="rgba(255,255,255,0.5)" stroke-width="0.75" stroke-dasharray="1,0.5"/>
+  <path d="M4 22 L20 22" stroke="rgba(255,255,255,0.5)" stroke-width="0.75" stroke-dasharray="1,0.5"/>
+</svg>

@@ -32,7 +32,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::widgets::ui;
-use crate::tester::{print_final_report, SharedState, TestConfig};
+use crate::tester::{SharedState, TestConfig};
 
 /// The UI application
 pub struct App {
@@ -163,7 +163,7 @@ impl App {
                                     disable_keepalive: false,
                                     disable_redirects: false,
                                     interactive: true,
-                                    output_format: "ui".to_string(),
+                                    output_format: String::new(), // Deprecated field
                                 };
 
                                 let state_clone = Arc::clone(&self.shared_state.state);
@@ -206,16 +206,7 @@ impl App {
         )?;
         terminal.show_cursor()?;
 
-        // Show final report
-        let metrics = crate::tester::SharedMetrics::new(
-            self.shared_state.state.lock().unwrap().url.clone(),
-            self.shared_state.state.lock().unwrap().method.to_string(),
-        );
-
-        let app_state = self.shared_state.state.lock().unwrap();
-        if app_state.is_complete && !app_state.should_quit {
-            print_final_report(&metrics);
-        }
+        // No final report needed - UI already shows all metrics
 
         Ok(())
     }

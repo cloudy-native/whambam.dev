@@ -61,8 +61,7 @@ fn test_comprehensive_command_line() {
         "--disable-compression",
         "--disable-keepalive",
         "--disable-redirects",
-        "-o",
-        "hey",
+        "--no-ui",
     ]);
 
     // Verify all arguments were parsed correctly
@@ -91,7 +90,7 @@ fn test_comprehensive_command_line() {
     assert!(args.disable_compression);
     assert!(args.disable_keepalive);
     assert!(args.disable_redirects);
-    assert_eq!(args.output_format, "hey");
+    assert!(args.no_ui);
 }
 
 #[test]
@@ -117,5 +116,5 @@ fn test_minimum_command_line() {
     assert!(!args.disable_compression);
     assert!(!args.disable_keepalive);
     assert!(!args.disable_redirects);
-    assert_eq!(args.output_format, "ui");
+    assert!(!args.no_ui);
 }

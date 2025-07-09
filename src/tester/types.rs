@@ -106,7 +106,8 @@ pub struct TestConfig {
     /// Whether to use interactive UI
     pub interactive: bool,
 
-    /// Output format ("ui" or "hey")
+    /// Deprecated output format field
+    #[deprecated]
     pub output_format: String,
 }
 

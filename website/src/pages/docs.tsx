@@ -13,7 +13,8 @@ export default function DocsPage() {
             <h2 className={title({ size: "md", class: "mt-8 mb-6" })}>Why?</h2>
             <p className="text-default-700">
               You can't be serious...another web performance testing tool?
-              You're right, but give us a chance to justify why we made whambam.
+              You're right to roll your eyes, but give us a chance to justify
+              why we made whambam.
             </p>
             <Snippet hideSymbol hideCopyButton variant="bordered">
               <span>$ brew doctor</span>
@@ -85,7 +86,7 @@ export default function DocsPage() {
             </Snippet>
             <p className="text-default-700">
               If you're not using homebrew, this is your chance and it will
-              definitely be worth it your while. Follow instructions at{" "}
+              definitely be worth your while. Follow instructions at{" "}
               <Link href="https://brew.sh" isExternal>
                 brew.sh
               </Link>
@@ -126,6 +127,9 @@ export default function DocsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
                       Default
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
+                      Examples & Explanation
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-background divide-y divide-default-200">
@@ -139,6 +143,11 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       200
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-n 1000</code> sends exactly 1000 requests. The test
+                      ends when all requests are complete. Cannot be used with{" "}
+                      <code>-z</code>.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -149,6 +158,10 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       50
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-c 100</code> simulates 100 users making requests
+                      simultaneously.
                     </td>
                   </tr>
                   <tr>
@@ -161,6 +174,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       unlimited
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-z 1m</code> runs the test for exactly 1 minute.
+                      Cannot be used with <code>-n</code>.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -172,6 +189,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       20
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-t 5</code> aborts any request that takes longer
+                      than 5 seconds.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -182,6 +203,11 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       unlimited
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-q 100</code> attempts to send 100 requests per
+                      second. If <code>-c</code> is too low, the actual rate may
+                      be lower.
                     </td>
                   </tr>
                 </tbody>
@@ -202,6 +228,9 @@ export default function DocsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
                       Default
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
+                      Examples & Explanation
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-background divide-y divide-default-200">
@@ -217,6 +246,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       GET
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-m POST</code> sends a POST request. Usually used
+                      with <code>-d</code> or <code>-D</code>.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -227,6 +260,10 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       -
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>{`-d '{"key":"value"}'`}</code> sends the given JSON
+                      string as the request body.
                     </td>
                   </tr>
                   <tr>
@@ -239,6 +276,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       -
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-D /path/to/body.json</code> sends the contents of
+                      the file as the request body.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -249,6 +290,11 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       -
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>
+                        -H 'X-My-Header: 123' -H 'User-Agent: whambam'
+                      </code>
                     </td>
                   </tr>
                   <tr>
@@ -261,6 +307,9 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       -
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-A 'application/json'</code> sets the Accept header.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -272,6 +321,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       text/html
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-T 'application/json'</code>. Important when sending
+                      a request body.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -282,6 +335,10 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       -
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-a admin:s3cr3t</code> sends an Authorization header
+                      with the credentials.
                     </td>
                   </tr>
                 </tbody>
@@ -299,6 +356,9 @@ export default function DocsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
                       Description
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
+                      Examples & Explanation
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-background divide-y divide-default-200">
@@ -309,6 +369,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
                       HTTP proxy
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      <code>-x http://127.0.0.1:8080</code> routes all requests
+                      through the specified proxy.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -316,6 +380,10 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
                       Disable compression
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      Prevents whambam from requesting compressed responses
+                      (e.g., gzip).
                     </td>
                   </tr>
                   <tr>
@@ -325,6 +393,10 @@ export default function DocsPage() {
                     <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
                       Disable connection reuse
                     </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      Forces a new TCP connection for each request. Simulates
+                      clients that don't support keep-alive.
+                    </td>
                   </tr>
                   <tr>
                     <td className="px-6 py-4 whitespace-nowrap font-mono text-sm text-default-800">
@@ -332,6 +404,10 @@ export default function DocsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
                       Disable redirect following
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      If the server returns a 3xx redirect, whambam will not
+                      follow it.
                     </td>
                   </tr>
                 </tbody>
@@ -351,6 +427,9 @@ export default function DocsPage() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
                       Default
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-default-500 uppercase tracking-wider">
+                      Examples & Explanation
                     </th>
                   </tr>
                 </thead>
@@ -374,6 +453,11 @@ export default function DocsPage() {
                       <code className="font-mono bg-default-100 p-1 rounded">
                         ui
                       </code>
+                    </td>
+                    <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
+                      NOTE: temporarily disabled in current version.{" "}
+                      <code>-o hey</code> is useful for scripting or logging, as
+                      it prints a simple text summary.
                     </td>
                   </tr>
                 </tbody>

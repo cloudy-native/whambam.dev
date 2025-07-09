@@ -83,7 +83,7 @@ fn test_args_default_values() {
     assert_eq!(args.rate_limit, 0.0);
     assert_eq!(args.headers.len(), 0);
     assert_eq!(args.timeout, 20);
-    assert_eq!(args.output_format, "ui");
+    assert!(!args.no_ui);
     assert_eq!(args.content_type, "text/html");
     assert!(!args.disable_compression);
     assert!(!args.disable_keepalive);
@@ -124,8 +124,7 @@ fn test_args_custom_values() {
         "--disable-compression",
         "--disable-keepalive",
         "--disable-redirects",
-        "-o",
-        "hey",
+        "--no-ui",
     ]);
 
     assert_eq!(args.url, "https://example.org");
@@ -135,7 +134,7 @@ fn test_args_custom_values() {
     assert_eq!(args.rate_limit, 10.5);
     assert_eq!(args.headers, vec!["X-Test: value".to_string()]);
     assert_eq!(args.timeout, 30);
-    assert_eq!(args.output_format, "hey");
+    assert!(args.no_ui);
     assert_eq!(args.content_type, "application/json");
     assert!(args.disable_compression);
     assert!(args.disable_keepalive);

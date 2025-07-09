@@ -12,6 +12,10 @@ export const siteConfig = {
       label: "Docs",
       href: "/docs",
     },
+    {
+      label: "Technology",
+      href: "/technology",
+    },
   ],
   navMenuItems: [
     {
@@ -21,6 +25,10 @@ export const siteConfig = {
     {
       label: "Docs",
       href: "/docs",
+    },
+    {
+      label: "Technology",
+      href: "/technology",
     },
   ],
   links: {

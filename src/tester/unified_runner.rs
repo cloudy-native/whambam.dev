@@ -25,7 +25,7 @@ use floating_duration::TimeAsFloat;
 use reqwest::Client;
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -88,6 +88,11 @@ impl UnifiedRunner {
     pub fn metrics(&self) -> SharedMetrics {
         self.metrics.clone()
     }
+    
+    /// Set the shared metrics to use for this runner
+    pub fn set_metrics(&mut self, metrics: SharedMetrics) {
+        self.metrics = metrics;
+    }
 
     /// Start the test in a separate task
     pub async fn start(&mut self) -> Result<()> {
@@ -100,8 +105,8 @@ impl UnifiedRunner {
         let config = self.config.clone();
         let metrics = self.metrics.clone();
 
-        // Create a channel for job completion
-        let (job_tx, mut job_rx) = mpsc::channel::<RequestMetric>(config.concurrent * 2);
+        // Create a channel for job completion with much larger capacity
+        let (job_tx, mut job_rx) = mpsc::channel::<RequestMetric>(config.concurrent * 50);
 
         // Spawn load test task
         let _load_test_handle = tokio::spawn(async move {
@@ -122,45 +127,103 @@ impl UnifiedRunner {
                 None
             };
 
-            // Create a worker pool
-            let worker_pool = WorkerPool::new(
+            // Create a worker pool with shared ownership
+            let worker_pool = Arc::new(WorkerPool::new(
                 client,
                 config.concurrent,
                 job_tx,
                 Arc::clone(&is_running),
                 config.rate_limit,
-            );
+            ));
 
-            // Submit jobs to the worker pool
+            // A much simpler approach - submit a large number of jobs at once
             let mut _submitted_jobs = 0;
-
-            for _i in 0..max_requests {
-                if !is_running.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                if let Some(max_dur) = max_duration {
-                    if start_time.elapsed() >= max_dur {
-                        break;
+            let job_capacity = 1_000_000; // 1M job limit
+            
+            // Calculate how many jobs to actually submit
+            // If limited by requests, use that, otherwise use our large capacity
+            let jobs_to_submit = if max_requests > 0 {
+                max_requests.min(job_capacity)
+            } else {
+                job_capacity
+            };
+            
+            // Create a separate task for job submission to avoid blocking
+            let job_submitter = tokio::spawn({
+                let is_running_clone = Arc::clone(&is_running);
+                let url_clone = url.clone();
+                let headers_clone = config.headers.clone();
+                let body_clone = config.body.clone();
+                let auth_clone = config.basic_auth.clone();
+                let method_clone = config.method;
+                let timeout_clone = config.timeout;
+                let pool_clone = Arc::clone(&worker_pool);
+                
+                async move {
+                    let mut submitted = 0;
+                    
+                    // Submit jobs in batches to avoid memory issues
+                    let batch_size = 1000;
+                    let num_batches = (jobs_to_submit + batch_size - 1) / batch_size;
+                    
+                    for _ in 0..num_batches {
+                        if !is_running_clone.load(Ordering::SeqCst) {
+                            break; // Stop if test is cancelled
+                        }
+                        
+                        // Calculate this batch size
+                        let current_batch = batch_size.min(jobs_to_submit - submitted);
+                        
+                        // Submit a batch of jobs
+                        for _ in 0..current_batch {
+                            let job = RequestJob {
+                                url: url_clone.clone(),
+                                headers: headers_clone.clone(),
+                                body: body_clone.clone(),
+                                basic_auth: auth_clone.clone(),
+                                method: method_clone,
+                                timeout: timeout_clone,
+                                start_time,
+                            };
+                            
+                            // Use async submission to properly backpressure
+                            pool_clone.submit_job(job).await;
+                            submitted += 1;
+                        }
+                        
+                        // Let other tasks run
+                        tokio::task::yield_now().await;
                     }
+                    
+                    submitted
                 }
-
-                let job = RequestJob {
-                    url: url.clone(),
-                    headers: config.headers.clone(),
-                    body: config.body.clone(),
-                    basic_auth: config.basic_auth.clone(),
-                    method: config.method,
-                    timeout: config.timeout,
-                    start_time,
-                };
-
-                worker_pool.submit_job(job).await;
-                _submitted_jobs += 1;
+            });
+            
+            // Start a duration-based timer if needed
+            let duration_timer = if let Some(max_dur) = max_duration {
+                // This task will stop the worker pool when the max duration is reached
+                let pool_for_timer = Arc::clone(&worker_pool);
+                let timer_handle = tokio::spawn(async move {
+                    tokio::time::sleep(max_dur).await;
+                    pool_for_timer.stop();
+                });
+                Some(timer_handle)
+            } else {
+                None
+            };
+            
+            // Wait for the job submitter to complete
+            if let Ok(count) = job_submitter.await {
+                _submitted_jobs = count;
             }
-
-            // Signal completion
-            worker_pool.stop();
+            
+            // If we have a duration timer, wait for it
+            if let Some(timer) = duration_timer {
+                // We don't care about the result, just making sure it's done
+                let _ = timer.await;
+            }
+            
+            // Job submitters are already awaited in the code above
 
             // Wait a bit to allow metrics to be processed
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -171,8 +234,9 @@ impl UnifiedRunner {
             // Send completion message
             let _ = load_tx.send(Message::TestComplete).await;
 
-            // Wait for worker pool to finish
-            worker_pool.wait().await;
+            // We can't use wait() with Arc since it requires ownership
+            // Just sleep a bit longer for workers to complete
+            tokio::time::sleep(Duration::from_secs(1)).await;
         });
 
         // Spawn metrics processing task
@@ -256,8 +320,8 @@ impl WorkerPool {
         is_running: Arc<AtomicBool>,
         rate_limit: f64,
     ) -> Self {
-        // Create a channel for distributing jobs
-        let (job_sender, job_receiver) = mpsc::channel::<RequestJob>(concurrency * 2);
+        // Create a channel for distributing jobs with much larger buffer
+        let (job_sender, job_receiver) = mpsc::channel::<RequestJob>(concurrency * 100);
 
         // Share the job receiver among workers
         let job_receiver = Arc::new(tokio::sync::Mutex::new(job_receiver));
@@ -306,6 +370,21 @@ impl WorkerPool {
             let _ = self.job_sender.send(job).await;
         }
     }
+    
+    /// Try to submit a job to the worker pool without awaiting
+    /// Returns true if the job was submitted, false otherwise
+    pub fn try_submit_job(&self, job: RequestJob) -> bool {
+        // Check if we're still running
+        if !self.is_running.load(Ordering::SeqCst) {
+            return false;
+        }
+        
+        // Try to send the job to the worker pool
+        match self.job_sender.try_send(job) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
 
     /// Stop the worker pool
     pub fn stop(&self) {
@@ -329,13 +408,25 @@ impl WorkerPool {
         rate_limit: f64,
     ) {
         while is_running.load(Ordering::SeqCst) {
-            // Get the next job
-            let job = {
+            // Get the next job with timeout to check for stop condition
+            let job_result = {
                 let mut receiver = job_receiver.lock().await;
-                match receiver.recv().await {
-                    Some(job) => job,
-                    None => break,
+                tokio::select! {
+                    job = receiver.recv() => job,
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                        // Check if we should stop
+                        if !is_running.load(Ordering::SeqCst) {
+                            None
+                        } else {
+                            continue;
+                        }
+                    }
                 }
+            };
+            
+            let job = match job_result {
+                Some(job) => job,
+                None => break, // No more jobs or stopping
             };
 
             // Apply rate limiting if configured
@@ -510,108 +601,4 @@ fn create_http_client(config: &TestConfig) -> Client {
     })
 }
 
-/// Generate a final report using the optimized metrics collector
-pub fn print_final_report(metrics: &SharedMetrics) {
-    let metrics_ref = metrics.metrics.clone();
-
-    // Process any queued metrics
-    metrics_ref.process_queued_metrics();
-    metrics_ref.update_statistics();
-
-    // Calculate overall elapsed time
-    let elapsed = metrics_ref.elapsed_seconds();
-    let overall_tps = if elapsed > 0.0 {
-        metrics_ref.completed_requests() as f64 / elapsed
-    } else {
-        0.0
-    };
-
-    println!("\n===== WHAMBAM Results =====");
-    println!("URL: {}", metrics_ref.url());
-    println!("HTTP Method: {}", metrics_ref.method());
-
-    // Get status counts
-    let status_counts = metrics_ref.status_counts();
-
-    println!("Total Requests: {}", metrics_ref.completed_requests());
-    println!("Total Time: {:.2}s", elapsed);
-    println!("Average Throughput: {:.2} req/s", overall_tps);
-    println!(
-        "Error Count: {} ({:.2}%)",
-        metrics_ref.error_count(),
-        100.0 * metrics_ref.error_count() as f64 / metrics_ref.completed_requests().max(1) as f64
-    );
-
-    // Format bytes function
-    let format_bytes = |bytes: u64| -> String {
-        if bytes < 1024 {
-            format!("{bytes} B")
-        } else if bytes < 1024 * 1024 {
-            format!("{:.2} KB", bytes as f64 / 1024.0)
-        } else if bytes < 1024 * 1024 * 1024 {
-            format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
-        } else {
-            format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-        }
-    };
-
-    println!(
-        "Total Bytes Sent: {}",
-        format_bytes(metrics_ref.bytes_sent())
-    );
-    println!(
-        "Total Bytes Received: {}",
-        format_bytes(metrics_ref.bytes_received())
-    );
-    println!(
-        "Total Bytes: {}",
-        format_bytes(metrics_ref.bytes_sent() + metrics_ref.bytes_received())
-    );
-
-    // Helper function to format latency with appropriate units
-    let format_latency = |latency_ms: f64| -> String {
-        let (value, unit) = if latency_ms < 1.0 {
-            // Microseconds
-            (latency_ms * 1000.0, "μs")
-        } else if latency_ms < 1000.0 {
-            // Milliseconds
-            (latency_ms, "ms")
-        } else {
-            // Seconds
-            (latency_ms / 1000.0, "s")
-        };
-
-        // Check if the fractional part is zero
-        if value.fract() == 0.0 {
-            format!("{} {}", value as i64, unit)
-        } else {
-            format!("{value:.3} {unit}")
-        }
-    };
-
-    println!("\nLatency Statistics:");
-    println!(
-        "  Min: {}",
-        format_latency(if metrics_ref.min_latency() == 0.0 {
-            0.0
-        } else {
-            metrics_ref.min_latency()
-        })
-    );
-    println!("  Max: {}", format_latency(metrics_ref.max_latency()));
-    println!("  P50: {}", format_latency(metrics_ref.p50_latency()));
-    println!("  P90: {}", format_latency(metrics_ref.p90_latency()));
-    println!("  P95: {}", format_latency(metrics_ref.p95_latency()));
-    println!("  P99: {}", format_latency(metrics_ref.p99_latency()));
-
-    println!("\nStatus Code Distribution:");
-    let mut status_codes: Vec<u16> = status_counts.keys().cloned().collect();
-    status_codes.sort();
-
-    for status in status_codes {
-        let count = *status_counts.get(&status).unwrap_or(&0);
-        let percentage = 100.0 * count as f64 / metrics_ref.completed_requests().max(1) as f64;
-        println!("  HTTP {status}: {count} ({percentage:.2}%)");
-    }
-}
 

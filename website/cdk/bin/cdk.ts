@@ -7,7 +7,7 @@ const env: cdk.Environment = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION,
 };
-new CdkStack(app, 'CdkStack', {
+new CdkStack(app, 'whambam-website', {
   env,
-  domainName: 'handycomputerbloke.com',
+  domainName: 'whambam.dev',
 });

@@ -40,7 +40,7 @@ pub mod ui;
 pub mod tests;
 
 use tester::{
-    print_final_report, HttpMethod, SharedMetrics, SharedState, TestConfig, TestState,
+    HttpMethod, SharedMetrics, SharedState, TestConfig, TestState,
     UnifiedRunner as TestRunner,
 };
 use ui::App;
@@ -134,9 +134,9 @@ pub struct Args {
     #[arg(long = "disable-redirects")]
     pub disable_redirects: bool,
 
-    /// Output format. 'ui' for interactive, 'hey' for text summary.
-    #[arg(short = 'o', long = "output", default_value = "ui")]
-    pub output_format: String,
+    /// Disable interactive UI. When specified, the command will exit with an error.
+    #[arg(long = "no-ui", default_value = "false")]
+    pub no_ui: bool,
 }
 
 /// Parses a duration string (e.g., "10s", "5m", "1h") into a total number of seconds.
@@ -240,44 +240,25 @@ pub async fn run(args: Args) -> Result<()> {
         disable_compression: args.disable_compression,
         disable_keepalive: args.disable_keepalive,
         disable_redirects: args.disable_redirects,
-        interactive: args.output_format.to_lowercase() == "ui",
-        output_format: args.output_format.clone(),
+        interactive: !args.no_ui,
+        output_format: String::new(), // Deprecated field
         content_type: args.content_type.clone(),
         proxy: args.proxy.clone(),
     };
 
     let shared_state = Arc::new(Mutex::new(TestState::new(&config)));
 
-    if config.interactive {
+    // Only interactive UI mode is supported
+    if !args.no_ui {
         let mut app = App::new(SharedState {
             state: shared_state,
         });
         app.run()?;
     } else {
-        let mut test_runner = TestRunner::with_state(
-            config,
-            SharedState {
-                state: shared_state.clone(),
-            },
-        );
-        test_runner.start().await?;
-
-        // Wait for the test to complete by monitoring the shared state
-        let mut is_complete = false;
-        while !is_complete {
-            {
-                let state = shared_state.lock().unwrap();
-                is_complete = state.is_complete;
-            }
-
-            if !is_complete {
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            }
-        }
-
-        let test_state = shared_state.lock().unwrap();
-        let metrics = SharedMetrics::new(test_state.url.clone(), test_state.method.to_string());
-        print_final_report(&metrics);
+        // Non-UI mode is not supported
+        println!("The --no-ui option is currently not supported.");
+        println!("The UI interface is required for this version.");
+        return Err(anyhow!("UI mode is required for this version"));
     }
 
     Ok(())

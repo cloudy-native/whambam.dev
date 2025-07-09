@@ -25,6 +25,7 @@ use clap::Parser;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use url::Url;
 
 mod tester;
@@ -126,9 +127,9 @@ struct Args {
     #[arg(long = "disable-redirects")]
     disable_redirects: bool,
 
-    /// Output format: 'ui' for interactive display, 'hey' for text summary
-    #[arg(short = 'o', long = "output", default_value = "ui")]
-    output_format: String,
+    /// Interactive UI for real-time display of test results
+    #[arg(long = "no-ui", default_value = "false")]
+    no_ui: bool,
 }
 
 /// Parse a duration string like "10s", "5m", etc. into seconds
@@ -289,75 +290,41 @@ async fn main() -> Result<()> {
         disable_compression: args.disable_compression,
         disable_keepalive: args.disable_keepalive,
         disable_redirects: args.disable_redirects,
-        interactive: args.output_format.to_lowercase() == "ui",
-        output_format: args.output_format.clone(),
+        interactive: !args.no_ui,
+        output_format: String::new(), // No longer used
     };
 
-    // Check output format
-    match args.output_format.to_lowercase().as_str() {
-        "ui" => {
-            // Create a shared state first
-            let state = Arc::new(Mutex::new(TestState::new(&config)));
+    // Run in interactive mode unless --no-ui is specified
+    if !args.no_ui {
+        // Create a shared state first
+        let state = Arc::new(Mutex::new(TestState::new(&config)));
 
-            // Create the UI app using a direct reference to the shared state
-            let shared_state = SharedState {
-                state: Arc::clone(&state),
-            };
-            let mut app = App::new(shared_state);
+        // Create the UI app using a direct reference to the shared state
+        let shared_state = SharedState {
+            state: Arc::clone(&state),
+        };
+        let mut app = App::new(shared_state);
 
-            // Start the test in a separate task, but only move the config
-            let config_clone = config.clone();
-            let state_clone = Arc::clone(&state);
-            tokio::spawn(async move {
-                // Create a test runner inside the task with the shared state
-                let mut runner =
-                    TestRunner::with_state(config_clone, SharedState { state: state_clone });
-                let _ = runner.start().await;
-            });
-
-            // Run the UI and let it control the application lifecycle
-            if let Err(e) = app.run() {
-                eprintln!("UI error: {e:?}");
-            }
-            // If we reach here, the UI has exited
-        }
-        "hey" => {
-            let state = Arc::new(Mutex::new(TestState::new(&config)));
-            let shared_state = SharedState {
-                state: Arc::clone(&state),
-            };
-
-            let mut runner = TestRunner::with_state(config, shared_state.clone());
+        // Start the test in a separate task, but only move the config
+        let config_clone = config.clone();
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            // Create a test runner inside the task with the shared state
+            let mut runner =
+                TestRunner::with_state(config_clone, SharedState { state: state_clone });
             let _ = runner.start().await;
+        });
 
-            let mut is_complete = false;
-            while !is_complete {
-                let test_status = {
-                    let state = shared_state.state.lock().unwrap();
-                    (state.is_complete, state.completed_requests)
-                };
-
-                is_complete = test_status.0;
-                if !is_complete {
-                    print!("\rRequests completed: {}   ", test_status.1);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                }
-            }
-            println!("\nTest completed!");
-
-            // Print summary report
-            let test_state = shared_state.state.lock().unwrap();
-            let metrics =
-                tester::SharedMetrics::new(test_state.url.clone(), test_state.method.to_string());
-            tester::print_final_report(&metrics);
+        // Run the UI and let it control the application lifecycle
+        if let Err(e) = app.run() {
+            eprintln!("UI error: {e:?}");
         }
-        _ => {
-            // Unknown output format
-            return Err(anyhow!(
-                "Invalid output format: {}. Supported formats: 'ui' or 'hey'",
-                args.output_format
-            ));
-        }
+        // If we reach here, the UI has exited
+    } else {
+        // Non-UI mode - just print a message and exit
+        println!("The --no-ui option is currently not supported.");
+        println!("The UI interface is required for this version.");
+        return Ok(());
     }
 
     Ok(())

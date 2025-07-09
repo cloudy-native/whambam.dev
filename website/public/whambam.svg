@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="32" height="32" rx="4" fill="#0052cc"/>
+  
+  <!-- Trailing speed lines -->
+  <path d="M4 16 L12 16" stroke="rgba(255,255,255,0.6)" stroke-width="0.7" stroke-dasharray="1.5,0.8"/>
+  <path d="M4 14 L10 14" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.2,0.7"/>
+  <path d="M4 18 L10 18" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.2,0.7"/>
+  <path d="M4 12 L8 12" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" stroke-dasharray="1,0.7"/>
+  <path d="M4 20 L8 20" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" stroke-dasharray="1,0.7"/>
+  
+  <path d="M17 16 L25 16" stroke="rgba(255,255,255,0.6)" stroke-width="0.7" stroke-dasharray="1.5,0.8"/>
+  <path d="M17 14 L23 14" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.2,0.7"/>
+  <path d="M17 18 L23 18" stroke="rgba(255,255,255,0.5)" stroke-width="0.6" stroke-dasharray="1.2,0.7"/>
+  <path d="M17 12 L21 12" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" stroke-dasharray="1,0.7"/>
+  <path d="M17 20 L21 20" stroke="rgba(255,255,255,0.4)" stroke-width="0.5" stroke-dasharray="1,0.7"/>
+  
+  <!-- Forward-leaning W - skewed and transformed -->
+  <g transform="translate(2,0) skewX(-10)">
+    <path d="M6 10 L9 22 L12 14 L15 22 L18 10" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <animate attributeName="stroke-dashoffset" from="100" to="0" dur="0.5s"/>
+    </path>
+  </g>
+  
+  <!-- Forward-leaning B - skewed and transformed -->
+  <g transform="translate(5,0) skewX(-10)">
+    <path d="M19 10 L19 22 M19 10 C24 10 24 16 19 16 C25 16 25 22 19 22" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <animate attributeName="stroke-dashoffset" from="100" to="0" dur="0.5s"/>
+    </path>
+  </g>
+</svg>

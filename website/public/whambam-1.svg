@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="#4B57A9"/>
+  
+  <!-- Lightning bolt 1 -->
+  <path d="M98 60L64 128H108L78 196" stroke="#FFD700" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Lightning bolt 2 -->
+  <path d="M158 60L124 128H168L138 196" stroke="#FFD700" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Speed lines -->
+  <path d="M40 100C50 96 70 92 90 100" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40 120C50 116 70 112 90 120" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  <path d="M40 140C50 136 70 132 90 140" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  
+  <!-- Connection nodes -->
+  <circle cx="64" cy="128" r="8" fill="#FFFFFF"/>
+  <circle cx="108" cy="128" r="8" fill="#FFFFFF"/>
+  <circle cx="124" cy="128" r="8" fill="#FFFFFF"/>
+  <circle cx="168" cy="128" r="8" fill="#FFFFFF"/>
+</svg>

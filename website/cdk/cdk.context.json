@@ -2,5 +2,13 @@
   "hosted-zone:account=607477397669:domainName=handycomputerbloke.com:region=us-east-1": {
     "Id": "/hostedzone/Z04300052FTHFSSX72YZO",
     "Name": "handycomputerbloke.com."
-  }
+  },
+  "hosted-zone:account=607477397669:domainName=whambam.dev:region=us-east-1": {
+    "Id": "/hostedzone/Z07367201KR1561KN702T",
+    "Name": "whambam.dev."
+  },
+  "acknowledged-issue-numbers": [
+    34892,
+    34892
+  ]
 }
