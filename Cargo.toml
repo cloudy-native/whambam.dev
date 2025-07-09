@@ -1,6 +1,6 @@
 [package]
 name = "whambam"
-version = "0.1.12"
+version = "0.2.0"
 edition = "2021"
 description = "A simple CLI web performance testing tool"
 authors = ["Stephen Harrison <stephen@harrison.org>"]
