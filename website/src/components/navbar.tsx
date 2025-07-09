@@ -50,10 +50,10 @@ export const Navbar = () => {
       </NavbarContent>
 
       <NavbarContent
-        className="hidden sm:flex basis-1/5 sm:basis-full"
+        className="hidden lg:flex basis-1/5 sm:basis-full"
         justify="end"
       >
-        <NavbarItem className="hidden sm:flex gap-2">
+        <NavbarItem className="flex gap-2">
           <Link isExternal href={siteConfig.links.github} title="GitHub">
             <GithubIcon className="text-default-500" />
           </Link>
@@ -62,7 +62,7 @@ export const Navbar = () => {
        
       </NavbarContent>
 
-      <NavbarContent className="sm:hidden basis-1 pl-4" justify="end">
+      <NavbarContent className="lg:hidden basis-1 pl-4" justify="end">
         <Link isExternal href={siteConfig.links.github}>
           <GithubIcon className="text-default-500" />
         </Link>
@@ -82,7 +82,7 @@ export const Navbar = () => {
                       ? "danger"
                       : "foreground"
                 }
-                href="#"
+                href={item.href}
                 size="lg"
               >
                 {item.label}
