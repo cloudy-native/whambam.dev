@@ -85,8 +85,7 @@ export default function DocsPage() {
             </Snippet>
             <p className="text-default-700">
               If you're not using homebrew, this is your chance and it will
-              definitely be worth it your while. This is time well spent. Follow
-              instructions at{" "}
+              definitely be worth it your while. Follow instructions at{" "}
               <Link href="https://brew.sh" isExternal>
                 brew.sh
               </Link>
@@ -110,7 +109,7 @@ export default function DocsPage() {
             </Snippet>
             <p className="text-default-700">
               Will pummel <code>https://example.com</code> for 10 seconds with
-              50 concurrent connections.
+              the default 50 concurrent connections.
             </p>
 
             <h3 className="text-xl font-bold pt-4">Core Options</h3>
@@ -211,7 +210,9 @@ export default function DocsPage() {
                       -m, --method &lt;METHOD&gt;
                     </td>
                     <td className="px-6 py-4 whitespace-normal text-sm text-default-600">
-                      HTTP method (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+                      HTTP method (<code>GET</code>, <code>POST</code>,{" "}
+                      <code>PUT</code>, <code>DELETE</code>, <code>HEAD</code>,{" "}
+                      <code>OPTIONS</code>)
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-default-600">
                       GET

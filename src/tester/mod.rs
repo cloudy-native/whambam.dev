@@ -1,20 +1,34 @@
+// MIT License
+//
+// Copyright (c) 2025 Whambam Contributors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 mod metrics;
-mod optimized_runner;
-mod runner;
-mod runner_optimized;
 mod types;
 mod unified_runner;
-mod worker_pool;
 
 // Export all common types
 pub use types::*;
 
-// Export the runner implementations
-pub use optimized_runner::{print_final_report as optimized_print_final_report, OptimizedRunner};
-pub use runner::{print_final_report, TestRunner};
-pub use unified_runner::{
-    print_final_report as unified_print_final_report, print_hey_format_report, UnifiedRunner,
-};
+// Export the unified runner implementation
+pub use unified_runner::{print_final_report, UnifiedRunner};
 
 // Export metrics collector
-pub use metrics::{LockFreeMetrics, SharedMetrics};
+pub use metrics::SharedMetrics;

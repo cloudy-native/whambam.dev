@@ -6,8 +6,8 @@ use std::time::Instant;
 use url::Url;
 
 use whambam::tester::{
-    HttpMethod, TestConfig, UnifiedRunner, SharedState, SharedMetrics, print_hey_format_report,
-    unified_print_final_report, TestState
+    HttpMethod, TestConfig, UnifiedRunner, SharedState, SharedMetrics,
+    print_final_report, TestState
 };
 
 #[derive(Parser, Clone, Debug)]
@@ -303,7 +303,7 @@ async fn main() -> Result<()> {
             println!("\nTest completed in {:.2} seconds!", start.elapsed().as_secs_f64());
             
             // Print the final report
-            print_hey_format_report(&metrics);
+            print_final_report(&metrics);
         }
         _ => {
             // Unknown output format

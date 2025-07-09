@@ -1,3 +1,25 @@
+// whambam - A high-performance HTTP load testing tool
+//
+// Copyright (c) 2025 Stephen Harrison
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 use anyhow::{Context, Result};
 use floating_duration::TimeAsFloat;
 use reqwest::Client;
@@ -12,7 +34,7 @@ use tokio::sync::mpsc;
 use url::Url;
 
 use super::metrics::SharedMetrics;
-use super::types::{HttpMethod, Message, RequestMetric, SharedState, TestConfig, TestState};
+use super::types::{HttpMethod, Message, RequestMetric, SharedState, TestConfig};
 
 /// Unified runner implementation that combines worker pool and lock-free metrics
 pub struct UnifiedRunner {
@@ -593,72 +615,3 @@ pub fn print_final_report(metrics: &SharedMetrics) {
     }
 }
 
-/// Generate a final report in 'hey' format for compatibility
-pub fn print_hey_format_report(metrics: &SharedMetrics) {
-    let metrics_ref = metrics.metrics.clone();
-
-    // Process any queued metrics
-    metrics_ref.process_queued_metrics();
-    metrics_ref.update_statistics();
-
-    // Calculate overall elapsed time
-    let elapsed = metrics_ref.elapsed_seconds();
-    let req_per_sec = if elapsed > 0.0 {
-        metrics_ref.completed_requests() as f64 / elapsed
-    } else {
-        0.0
-    };
-
-    let bytes_per_sec = if elapsed > 0.0 {
-        metrics_ref.bytes_received() as f64 / elapsed
-    } else {
-        0.0
-    };
-
-    println!("\nSummary:");
-    println!("  Total:\t{:.4} secs", elapsed);
-    println!("  Slowest:\t{:.4} secs", metrics_ref.max_latency() / 1000.0);
-    println!("  Fastest:\t{:.4} secs", metrics_ref.min_latency() / 1000.0);
-    println!("  Average:\t{:.4} secs", metrics_ref.p50_latency() / 1000.0);
-    println!("  Requests/sec:\t{:.4}", req_per_sec);
-
-    // Transfer rate
-    if bytes_per_sec >= 1024.0 * 1024.0 {
-        println!(
-            "  Transfer/sec:\t{:.2} MB",
-            bytes_per_sec / (1024.0 * 1024.0)
-        );
-    } else if bytes_per_sec >= 1024.0 {
-        println!("  Transfer/sec:\t{:.2} KB", bytes_per_sec / 1024.0);
-    } else {
-        println!("  Transfer/sec:\t{:.2} B", bytes_per_sec);
-    }
-
-    println!("\nLatency distribution:");
-    println!("  10% in {:.4} secs", metrics_ref.p50_latency() / 2000.0);
-    println!("  25% in {:.4} secs", metrics_ref.p50_latency() / 1500.0);
-    println!("  50% in {:.4} secs", metrics_ref.p50_latency() / 1000.0);
-    println!("  75% in {:.4} secs", metrics_ref.p90_latency() / 1000.0);
-    println!("  90% in {:.4} secs", metrics_ref.p90_latency() / 1000.0);
-    println!("  95% in {:.4} secs", metrics_ref.p95_latency() / 1000.0);
-    println!("  99% in {:.4} secs", metrics_ref.p99_latency() / 1000.0);
-
-    println!("\nHTTP response status codes:");
-    let status_counts = metrics_ref.status_counts();
-    let mut status_codes: Vec<u16> = status_counts.keys().cloned().collect();
-    status_codes.sort();
-
-    for status in status_codes {
-        let count = *status_counts.get(&status).unwrap_or(&0);
-        let percentage = 100.0 * count as f64 / metrics_ref.completed_requests().max(1) as f64;
-        println!("  [{status}] {count} responses ({percentage:.2}%)");
-    }
-
-    // Add connection errors if any
-    let error_count = metrics_ref.error_count();
-    if error_count > 0 && !status_counts.contains_key(&0) {
-        let percentage =
-            100.0 * error_count as f64 / metrics_ref.completed_requests().max(1) as f64;
-        println!("  [connection errors] {error_count} responses ({percentage:.2}%)");
-    }
-}

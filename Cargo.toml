@@ -16,17 +16,6 @@ categories = ["command-line-utilities"]
 name = "whambam"
 path = "src/main.rs"
 
-[[bin]]
-name = "whambam_optimized"
-path = "src/bin/whambam_optimized.rs"
-
-[[bin]]
-name = "whambam_lockfree"
-path = "src/bin/whambam_lockfree.rs"
-
-[[bin]]
-name = "whambam_unified"
-path = "src/bin/whambam_unified.rs"
 
 
 

@@ -29,10 +29,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::{
-    fs,
-    io::{self, Write},
-};
+use std::fs;
 use url::Url;
 
 pub mod args;
@@ -42,7 +39,10 @@ pub mod ui;
 #[cfg(test)]
 pub mod tests;
 
-use tester::{HttpMethod, SharedState, TestConfig, TestRunner, TestState};
+use tester::{
+    print_final_report, HttpMethod, SharedMetrics, SharedState, TestConfig, TestState,
+    UnifiedRunner as TestRunner,
+};
 use ui::App;
 
 /// Custom parser for HTTP methods.
@@ -175,173 +175,6 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
     }
 }
 
-/// Prints a summary report in a format similar to the `hey` load testing tool.
-fn print_hey_format_report<W: Write>(w: &mut W, test_state: &TestState) -> io::Result<()> {
-    let elapsed = if test_state.is_complete && test_state.end_time.is_some() {
-        test_state
-            .end_time
-            .unwrap()
-            .duration_since(test_state.start_time)
-            .as_secs_f64()
-    } else {
-        test_state.start_time.elapsed().as_secs_f64()
-    };
-
-    let total_requests = test_state.completed_requests;
-    let overall_tps = if elapsed > 0.0 {
-        total_requests as f64 / elapsed
-    } else {
-        0.0
-    };
-
-    let min_latency = if test_state.min_latency == f64::MAX {
-        0.0
-    } else {
-        test_state.min_latency
-    };
-    let max_latency = test_state.max_latency;
-
-    let avg_latency =
-        test_state.p50_latency * 0.6 + test_state.p90_latency * 0.3 + test_state.p95_latency * 0.1;
-
-    if !test_state.headers.is_empty() {
-        println!("\nRequest Headers:");
-        for (name, value) in &test_state.headers {
-            println!("  {name}: {value}");
-        }
-    }
-
-    writeln!(w, "\nSummary:")?;
-    writeln!(w, "  Total:\t{elapsed:.4} secs")?;
-    writeln!(w, "  Slowest:\t{:.4} secs", max_latency / 1000.0)?;
-    writeln!(w, "  Fastest:\t{:.4} secs", min_latency / 1000.0)?;
-    writeln!(w, "  Average:\t{:.4} secs", avg_latency / 1000.0)?;
-    writeln!(w, "  Requests/sec:\t{overall_tps:.4}")?;
-    writeln!(w)?;
-    writeln!(
-        w,
-        "  Total data:\t{} bytes",
-        test_state.total_bytes_received
-    )?;
-    writeln!(
-        w,
-        "  Size/request:\t{} bytes",
-        if total_requests > 0 {
-            test_state.total_bytes_received / total_requests as u64
-        } else {
-            0
-        }
-    )?;
-
-    writeln!(w, "\nResponse time histogram:")?;
-
-    let hist_min = (min_latency / 1000.0).max(0.0);
-    let hist_max = (max_latency / 1000.0).max(0.001); // Ensure non-zero range
-
-    let num_buckets = 10;
-    let bucket_size = (hist_max - hist_min) / num_buckets as f64;
-
-    let mut histogram_data = vec![0; num_buckets];
-    if total_requests > 0 {
-        for i in 0..total_requests {
-            let percentile = i as f64 / total_requests as f64;
-
-            let latency_secs = if percentile < 0.50 {
-                hist_min + (test_state.p50_latency / 1000.0 - hist_min) * (percentile / 0.5)
-            } else if percentile < 0.90 {
-                test_state.p50_latency / 1000.0
-                    + (test_state.p90_latency / 1000.0 - test_state.p50_latency / 1000.0)
-                        * ((percentile - 0.5) / 0.4)
-            } else {
-                test_state.p90_latency / 1000.0
-                    + (hist_max - test_state.p90_latency / 1000.0) * ((percentile - 0.9) / 0.1)
-            };
-
-            let bucket_idx =
-                ((latency_secs - hist_min) / bucket_size).min((num_buckets - 1) as f64) as usize;
-            histogram_data[bucket_idx] += 1;
-        }
-    }
-
-    let max_count = *histogram_data.iter().max().unwrap_or(&1) as f64;
-
-    for (i, &count) in histogram_data.iter().enumerate() {
-        let bucket_start = hist_min + i as f64 * bucket_size;
-        let bar_width = 40;
-        let bar_len = if max_count > 0.0 {
-            ((count as f64 / max_count) * bar_width as f64) as usize
-        } else {
-            0
-        };
-        let bar = "■".repeat(bar_len.min(bar_width));
-        writeln!(w, "  {bucket_start:.3} [{count}]\t|{bar}")?;
-    }
-
-    writeln!(w, "\nLatency distribution:")?;
-    let p10_latency = test_state.latency_histogram.value_at_quantile(0.1) as f64 / 1_000_000.0;
-    let p25_latency = test_state.latency_histogram.value_at_quantile(0.25) as f64 / 1_000_000.0;
-    let p50_latency = test_state.latency_histogram.value_at_quantile(0.5) as f64 / 1_000_000.0;
-    let p75_latency = test_state.latency_histogram.value_at_quantile(0.75) as f64 / 1_000_000.0;
-    let p90_latency = test_state.latency_histogram.value_at_quantile(0.9) as f64 / 1_000_000.0;
-    let p95_latency = test_state.latency_histogram.value_at_quantile(0.95) as f64 / 1_000_000.0;
-    let p99_latency = test_state.latency_histogram.value_at_quantile(0.99) as f64 / 1_000_000.0;
-
-    println!("  10% in {p10_latency:.4} secs");
-    println!("  25% in {p25_latency:.4} secs");
-    println!("  50% in {p50_latency:.4} secs");
-    println!("  75% in {p75_latency:.4} secs");
-    println!("  90% in {p90_latency:.4} secs");
-    println!("  95% in {p95_latency:.4} secs");
-    println!("  99% in {p99_latency:.4} secs");
-
-    println!("\nDetails (average, fastest, slowest):");
-    println!(
-        "  DNS+dialup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        0.0,
-        min_latency / 1000.0,
-        max_latency / 1000.0
-    );
-    println!(
-        "  DNS-lookup:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        0.0, 0.0, 0.0
-    );
-    println!(
-        "  req write:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        0.0,
-        0.0,
-        (max_latency / 1000.0) * 0.1
-    );
-    println!(
-        "  resp wait:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        avg_latency / 1000.0,
-        min_latency / 1000.0,
-        (max_latency / 1000.0) * 0.9
-    );
-    println!(
-        "  resp read:\t{:.4} secs, {:.4} secs, {:.4} secs",
-        0.0,
-        0.0,
-        (max_latency / 1000.0) * 0.1
-    );
-
-    writeln!(w, "\nStatus code distribution:")?;
-    let mut status_codes: Vec<u16> = test_state.status_counts.keys().cloned().collect();
-    status_codes.sort();
-
-    for status in status_codes {
-        let count = *test_state.status_counts.get(&status).unwrap_or(&0);
-        writeln!(w, "  [{status}]\t{count} responses")?;
-    }
-
-    if test_state.error_count > 0 {
-        writeln!(
-            w,
-            "  [Connection Error]\t{} responses",
-            test_state.error_count
-        )?;
-    }
-    Ok(())
-}
 
 pub async fn run(args: Args) -> Result<()> {
     let _url = Url::parse(&args.url).context("Invalid URL")?;
@@ -428,9 +261,23 @@ pub async fn run(args: Args) -> Result<()> {
             },
         );
         test_runner.start().await?;
-        // Wait for the test to complete. A better mechanism would be to wait on a signal.
-        tokio::time::sleep(tokio::time::Duration::from_secs(duration_secs + 1)).await;
-        print_hey_format_report(&mut io::stdout(), &shared_state.lock().unwrap())?;
+
+        // Wait for the test to complete by monitoring the shared state
+        let mut is_complete = false;
+        while !is_complete {
+            {
+                let state = shared_state.lock().unwrap();
+                is_complete = state.is_complete;
+            }
+
+            if !is_complete {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        }
+
+        let test_state = shared_state.lock().unwrap();
+        let metrics = SharedMetrics::new(test_state.url.clone(), test_state.method.to_string());
+        print_final_report(&metrics);
     }
 
     Ok(())

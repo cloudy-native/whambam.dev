@@ -1,3 +1,25 @@
+// whambam - A high-performance HTTP load testing tool
+//
+// Copyright (c) 2025 Stephen Harrison
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -149,7 +171,7 @@ impl App {
                                 // Spawn a new test runner task
                                 tokio::spawn(async move {
                                     // Create a test runner inside the task with the shared state
-                                    let mut runner = crate::tester::TestRunner::with_state(
+                                    let mut runner = crate::tester::UnifiedRunner::with_state(
                                         config,
                                         crate::tester::SharedState { state: state_clone },
                                     );
@@ -185,9 +207,14 @@ impl App {
         terminal.show_cursor()?;
 
         // Show final report
+        let metrics = crate::tester::SharedMetrics::new(
+            self.shared_state.state.lock().unwrap().url.clone(),
+            self.shared_state.state.lock().unwrap().method.to_string(),
+        );
+
         let app_state = self.shared_state.state.lock().unwrap();
         if app_state.is_complete && !app_state.should_quit {
-            print_final_report(&app_state);
+            print_final_report(&metrics);
         }
 
         Ok(())
