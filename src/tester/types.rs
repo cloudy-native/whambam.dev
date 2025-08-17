@@ -104,10 +104,12 @@ pub struct TestConfig {
     pub disable_redirects: bool,
 
     /// Whether to use interactive UI
+    #[allow(dead_code)]
     pub interactive: bool,
 
     /// Deprecated output format field
     #[deprecated]
+    #[allow(dead_code)]
     pub output_format: String,
 }
 
@@ -124,6 +126,7 @@ pub struct RequestMetric {
 }
 
 /// Messages sent between testing and UI threads
+#[allow(dead_code)]
 pub enum Message {
     RequestComplete(RequestMetric),
     TestComplete,

@@ -40,7 +40,7 @@ pub mod ui;
 pub mod tests;
 
 use tester::{
-    HttpMethod, SharedMetrics, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner,
+    HttpMethod, SharedState, TestConfig, TestState,
 };
 use ui::App;
 
@@ -185,8 +185,7 @@ pub async fn run(args: Args) -> Result<()> {
             headers.push((name.trim().to_string(), value.trim().to_string()));
         } else {
             eprintln!(
-                "Warning: Ignoring invalid header format: '{}'. Expected 'Name: Value'.",
-                header
+                "Warning: Ignoring invalid header format: '{header}'. Expected 'Name: Value'."
             );
         }
     }
@@ -204,7 +203,7 @@ pub async fn run(args: Args) -> Result<()> {
         (None, Some(file_path)) => match fs::read_to_string(Path::new(file_path)) {
             Ok(content) => Some(content),
             Err(e) => {
-                eprintln!("Warning: Failed to read body file '{}': {}. Request will be sent without a body.", file_path, e);
+                eprintln!("Warning: Failed to read body file '{file_path}': {e}. Request will be sent without a body.");
                 None
             }
         },
@@ -224,6 +223,7 @@ pub async fn run(args: Args) -> Result<()> {
         args.requests.max(args.concurrent)
     };
 
+    #[allow(deprecated)]
     let config = TestConfig {
         url: args.url.clone(),
         method: args.method,

@@ -25,7 +25,7 @@ use floating_duration::TimeAsFloat;
 use reqwest::Client;
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -43,11 +43,13 @@ pub struct UnifiedRunner {
     shared_state: Option<SharedState>,
     is_running: Arc<AtomicBool>,
     tx: mpsc::Sender<Message>,
+    #[allow(dead_code)]
     rx: mpsc::Receiver<Message>,
 }
 
 impl UnifiedRunner {
     /// Create a new unified runner with the given configuration
+    #[allow(dead_code)]
     pub fn new(config: TestConfig) -> Self {
         let (tx, rx) = mpsc::channel::<Message>(config.concurrent * 2);
         let is_running = Arc::new(AtomicBool::new(true));
@@ -80,16 +82,19 @@ impl UnifiedRunner {
     }
 
     /// Stop the test
+    #[allow(dead_code)]
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::SeqCst);
     }
 
     /// Get a clone of the shared metrics
+    #[allow(dead_code)]
     pub fn metrics(&self) -> SharedMetrics {
         self.metrics.clone()
     }
 
     /// Set the shared metrics to use for this runner
+    #[allow(dead_code)]
     pub fn set_metrics(&mut self, metrics: SharedMetrics) {
         self.metrics = metrics;
     }
@@ -164,7 +169,7 @@ impl UnifiedRunner {
 
                     // Submit jobs in batches to avoid memory issues
                     let batch_size = 1000;
-                    let num_batches = (jobs_to_submit + batch_size - 1) / batch_size;
+                    let num_batches = jobs_to_submit.div_ceil(batch_size);
 
                     for _ in 0..num_batches {
                         if !is_running_clone.load(Ordering::SeqCst) {
@@ -305,8 +310,10 @@ pub struct RequestJob {
 
 /// A worker pool for efficiently processing HTTP requests
 pub struct WorkerPool {
+    #[allow(dead_code)]
     client: Client,
     job_sender: mpsc::Sender<RequestJob>,
+    #[allow(dead_code)]
     worker_handles: Vec<tokio::task::JoinHandle<()>>,
     is_running: Arc<AtomicBool>,
 }
@@ -373,6 +380,7 @@ impl WorkerPool {
 
     /// Try to submit a job to the worker pool without awaiting
     /// Returns true if the job was submitted, false otherwise
+    #[allow(dead_code)]
     pub fn try_submit_job(&self, job: RequestJob) -> bool {
         // Check if we're still running
         if !self.is_running.load(Ordering::SeqCst) {
@@ -380,10 +388,7 @@ impl WorkerPool {
         }
 
         // Try to send the job to the worker pool
-        match self.job_sender.try_send(job) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        self.job_sender.try_send(job).is_ok()
     }
 
     /// Stop the worker pool
@@ -392,6 +397,7 @@ impl WorkerPool {
     }
 
     /// Wait for all workers to complete
+    #[allow(dead_code)]
     pub async fn wait(self) {
         if !self.worker_handles.is_empty() {
             let _ = futures::future::join_all(self.worker_handles).await;
@@ -457,6 +463,7 @@ impl WorkerPool {
     }
 
     /// Execute an HTTP request and return metrics
+    #[allow(clippy::too_many_arguments)]
     async fn execute_request(
         client: &Client,
         url: Url,

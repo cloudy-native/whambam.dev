@@ -50,7 +50,7 @@ fn test_duration_parsing_in_args() {
 
         assert_eq!(args.duration_str, input);
         let parsed_duration = parse_duration(&args.duration_str).unwrap();
-        assert_eq!(parsed_duration, expected, "Failed for input: {}", input);
+        assert_eq!(parsed_duration, expected, "Failed for input: {input}");
     }
 }
 

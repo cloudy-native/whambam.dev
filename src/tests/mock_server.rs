@@ -122,8 +122,8 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
                 bytes_read += n;
 
                 // Check if we have a complete line
-                if buffer[bytes_read - 1] == b'\n' {
-                    if bytes_read >= 2 && buffer[bytes_read - 2] == b'\r' {
+                if buffer[bytes_read - 1] == b'\n'
+                    && bytes_read >= 2 && buffer[bytes_read - 2] == b'\r' {
                         // We have a complete line
                         let line = String::from_utf8_lossy(&buffer[..bytes_read - 2]);
                         headers.push(line.to_string());
@@ -137,7 +137,6 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
                         buffer = [0; 1024];
                         bytes_read = 0;
                     }
-                }
             }
             Err(_) => break,
         }
@@ -158,7 +157,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
                 let name = name.trim().to_lowercase();
                 let value = value[1..].trim().to_string();
 
-                header_map.entry(name).or_insert_with(Vec::new).push(value);
+                header_map.entry(name).or_default().push(value);
             }
         }
     }
@@ -187,13 +186,12 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
     };
 
     let response = format!(
-        "HTTP/1.1 {} {}\r\n\
+        "HTTP/1.1 {status} {status_text}\r\n\
          Content-Type: text/plain\r\n\
          Connection: close\r\n\
          Content-Length: 13\r\n\
          \r\n\
-         Hello, World!",
-        status, status_text
+         Hello, World!"
     );
 
     let _ = stream.write_all(response.as_bytes()).await;
@@ -211,19 +209,19 @@ mod tests {
         let client = Client::new();
 
         // Test basic request
-        let resp = client.get(&server.url()).send().await.unwrap();
+        let resp = client.get(server.url()).send().await.unwrap();
         assert_eq!(resp.status().as_u16(), 200);
         assert_eq!(server.request_count(), 1);
 
         // Test with custom status code
         server.set_response_status(404);
-        let resp = client.get(&server.url()).send().await.unwrap();
+        let resp = client.get(server.url()).send().await.unwrap();
         assert_eq!(resp.status().as_u16(), 404);
         assert_eq!(server.request_count(), 2);
 
         // Test with custom headers
         let _resp = client
-            .get(&server.url())
+            .get(server.url())
             .header("X-Test", "test-value")
             .header("User-Agent", "mock-client")
             .send()

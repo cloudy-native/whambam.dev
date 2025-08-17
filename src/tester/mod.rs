@@ -31,4 +31,3 @@ pub use types::*;
 pub use unified_runner::UnifiedRunner;
 
 // Export metrics collector
-pub use metrics::SharedMetrics;

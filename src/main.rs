@@ -25,7 +25,6 @@ use clap::Parser;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use url::Url;
 
 mod tester;
@@ -273,6 +272,7 @@ async fn main() -> Result<()> {
     };
 
     // Create test configuration
+    #[allow(deprecated)]
     let config = TestConfig {
         url: args.url.clone(),
         method: args.method,

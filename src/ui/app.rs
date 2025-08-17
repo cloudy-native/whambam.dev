@@ -46,6 +46,12 @@ pub struct UiState {
     pub selected_tab: usize,
 }
 
+impl Default for UiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UiState {
     pub fn new() -> Self {
         UiState {
@@ -146,6 +152,7 @@ impl App {
                                 app_state.reset();
 
                                 // Create and launch a new test runner
+                                #[allow(deprecated)]
                                 let config = TestConfig {
                                     url: app_state.url.clone(),
                                     method: app_state.method,
