@@ -88,7 +88,7 @@ impl UnifiedRunner {
     pub fn metrics(&self) -> SharedMetrics {
         self.metrics.clone()
     }
-    
+
     /// Set the shared metrics to use for this runner
     pub fn set_metrics(&mut self, metrics: SharedMetrics) {
         self.metrics = metrics;
@@ -139,7 +139,7 @@ impl UnifiedRunner {
             // A much simpler approach - submit a large number of jobs at once
             let mut _submitted_jobs = 0;
             let job_capacity = 1_000_000; // 1M job limit
-            
+
             // Calculate how many jobs to actually submit
             // If limited by requests, use that, otherwise use our large capacity
             let jobs_to_submit = if max_requests > 0 {
@@ -147,7 +147,7 @@ impl UnifiedRunner {
             } else {
                 job_capacity
             };
-            
+
             // Create a separate task for job submission to avoid blocking
             let job_submitter = tokio::spawn({
                 let is_running_clone = Arc::clone(&is_running);
@@ -158,22 +158,22 @@ impl UnifiedRunner {
                 let method_clone = config.method;
                 let timeout_clone = config.timeout;
                 let pool_clone = Arc::clone(&worker_pool);
-                
+
                 async move {
                     let mut submitted = 0;
-                    
+
                     // Submit jobs in batches to avoid memory issues
                     let batch_size = 1000;
                     let num_batches = (jobs_to_submit + batch_size - 1) / batch_size;
-                    
+
                     for _ in 0..num_batches {
                         if !is_running_clone.load(Ordering::SeqCst) {
                             break; // Stop if test is cancelled
                         }
-                        
+
                         // Calculate this batch size
                         let current_batch = batch_size.min(jobs_to_submit - submitted);
-                        
+
                         // Submit a batch of jobs
                         for _ in 0..current_batch {
                             let job = RequestJob {
@@ -185,20 +185,20 @@ impl UnifiedRunner {
                                 timeout: timeout_clone,
                                 start_time,
                             };
-                            
+
                             // Use async submission to properly backpressure
                             pool_clone.submit_job(job).await;
                             submitted += 1;
                         }
-                        
+
                         // Let other tasks run
                         tokio::task::yield_now().await;
                     }
-                    
+
                     submitted
                 }
             });
-            
+
             // Start a duration-based timer if needed
             let duration_timer = if let Some(max_dur) = max_duration {
                 // This task will stop the worker pool when the max duration is reached
@@ -211,18 +211,18 @@ impl UnifiedRunner {
             } else {
                 None
             };
-            
+
             // Wait for the job submitter to complete
             if let Ok(count) = job_submitter.await {
                 _submitted_jobs = count;
             }
-            
+
             // If we have a duration timer, wait for it
             if let Some(timer) = duration_timer {
                 // We don't care about the result, just making sure it's done
                 let _ = timer.await;
             }
-            
+
             // Job submitters are already awaited in the code above
 
             // Wait a bit to allow metrics to be processed
@@ -370,7 +370,7 @@ impl WorkerPool {
             let _ = self.job_sender.send(job).await;
         }
     }
-    
+
     /// Try to submit a job to the worker pool without awaiting
     /// Returns true if the job was submitted, false otherwise
     pub fn try_submit_job(&self, job: RequestJob) -> bool {
@@ -378,7 +378,7 @@ impl WorkerPool {
         if !self.is_running.load(Ordering::SeqCst) {
             return false;
         }
-        
+
         // Try to send the job to the worker pool
         match self.job_sender.try_send(job) {
             Ok(_) => true,
@@ -423,7 +423,7 @@ impl WorkerPool {
                     }
                 }
             };
-            
+
             let job = match job_result {
                 Some(job) => job,
                 None => break, // No more jobs or stopping
@@ -600,5 +600,3 @@ fn create_http_client(config: &TestConfig) -> Client {
         Client::new()
     })
 }
-
-

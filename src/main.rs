@@ -181,7 +181,6 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
     }
 }
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Parse command line arguments

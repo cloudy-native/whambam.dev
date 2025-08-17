@@ -27,9 +27,9 @@
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
+use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::fs;
 use url::Url;
 
 pub mod args;
@@ -40,8 +40,7 @@ pub mod ui;
 pub mod tests;
 
 use tester::{
-    HttpMethod, SharedMetrics, SharedState, TestConfig, TestState,
-    UnifiedRunner as TestRunner,
+    HttpMethod, SharedMetrics, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner,
 };
 use ui::App;
 
@@ -174,7 +173,6 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         }
     }
 }
-
 
 pub async fn run(args: Args) -> Result<()> {
     let _url = Url::parse(&args.url).context("Invalid URL")?;
