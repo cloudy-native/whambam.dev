@@ -123,20 +123,22 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
 
                 // Check if we have a complete line
                 if buffer[bytes_read - 1] == b'\n'
-                    && bytes_read >= 2 && buffer[bytes_read - 2] == b'\r' {
-                        // We have a complete line
-                        let line = String::from_utf8_lossy(&buffer[..bytes_read - 2]);
-                        headers.push(line.to_string());
+                    && bytes_read >= 2
+                    && buffer[bytes_read - 2] == b'\r'
+                {
+                    // We have a complete line
+                    let line = String::from_utf8_lossy(&buffer[..bytes_read - 2]);
+                    headers.push(line.to_string());
 
-                        // If we got an empty line, we're done with headers
-                        if line.is_empty() {
-                            break;
-                        }
-
-                        // Reset for next line
-                        buffer = [0; 1024];
-                        bytes_read = 0;
+                    // If we got an empty line, we're done with headers
+                    if line.is_empty() {
+                        break;
                     }
+
+                    // Reset for next line
+                    buffer = [0; 1024];
+                    bytes_read = 0;
+                }
             }
             Err(_) => break,
         }

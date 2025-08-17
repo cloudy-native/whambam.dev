@@ -39,9 +39,7 @@ pub mod ui;
 #[cfg(test)]
 pub mod tests;
 
-use tester::{
-    HttpMethod, SharedState, TestConfig, TestState,
-};
+use tester::{HttpMethod, SharedState, TestConfig, TestState};
 use ui::App;
 
 /// Custom parser for HTTP methods.
