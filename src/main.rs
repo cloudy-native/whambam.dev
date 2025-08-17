@@ -25,7 +25,6 @@ use clap::Parser;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use url::Url;
 
 mod tester;
@@ -181,7 +180,6 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
     }
 }
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Parse command line arguments
@@ -274,6 +272,7 @@ async fn main() -> Result<()> {
     };
 
     // Create test configuration
+    #[allow(deprecated)]
     let config = TestConfig {
         url: args.url.clone(),
         method: args.method,

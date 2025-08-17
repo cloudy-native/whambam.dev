@@ -35,8 +35,11 @@ use super::types::RequestMetric;
 /// to minimize contention when collecting metrics from multiple threads
 pub struct LockFreeMetrics {
     // Configuration
+    #[allow(dead_code)]
     url: String,
+    #[allow(dead_code)]
     method: String,
+    #[allow(dead_code)]
     start_time: Instant,
 
     // Atomic counters for frequently updated simple metrics
@@ -72,6 +75,7 @@ pub struct LockFreeMetrics {
     last_stats_update: RwLock<Instant>,
 }
 
+#[allow(dead_code)]
 impl LockFreeMetrics {
     /// Create a new lock-free metrics collector
     pub fn new(url: String, method: String) -> Self {
@@ -214,10 +218,10 @@ impl LockFreeMetrics {
         // Update percentiles
         if let Ok(hist) = self.latency_histogram.read() {
             // Convert from microseconds to milliseconds
-            let p50 = hist.value_at_quantile(0.5) as u64;
-            let p90 = hist.value_at_quantile(0.9) as u64;
-            let p95 = hist.value_at_quantile(0.95) as u64;
-            let p99 = hist.value_at_quantile(0.99) as u64;
+            let p50 = hist.value_at_quantile(0.5);
+            let p90 = hist.value_at_quantile(0.9);
+            let p95 = hist.value_at_quantile(0.95);
+            let p99 = hist.value_at_quantile(0.99);
 
             self.p50_latency.store(p50, Ordering::Relaxed);
             self.p90_latency.store(p90, Ordering::Relaxed);
@@ -373,11 +377,13 @@ impl SharedMetrics {
     }
 
     /// Process queued metrics and update statistics
+    #[allow(dead_code)]
     pub fn process_queued_metrics(&self) {
         self.metrics.process_queued_metrics();
     }
 
     /// Update derived statistics
+    #[allow(dead_code)]
     pub fn update_statistics(&self) {
         self.metrics.update_statistics();
     }

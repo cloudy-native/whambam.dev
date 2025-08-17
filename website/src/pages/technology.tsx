@@ -721,9 +721,13 @@ Statistics        Avg      Stdev        Max
               />
             </div>
             <p className="text-default-700">
-              All the numbers look good and in range. You can also run whambam
-              with "<code>--output hey</code>" for output that's similar format
-              to <code>hey</code>. Let's take a look.
+              All the numbers look good and in range.
+            </p>
+            <p className="text-default-700">
+              <strong>Broken in this version. Sorry.</strong>
+              You can also run whambam with "<code>--output hey</code>" for
+              output that's similar format to <code>hey</code>. Let's take a
+              look.
             </p>
           </div>
         </section>

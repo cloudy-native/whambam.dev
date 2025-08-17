@@ -67,7 +67,7 @@ async fn test_runner_basic_functionality() {
     // Wait for test to complete (using sleep since this is just a test)
     let mut iterations = 0;
     let max_iterations = 50; // Wait up to 5 seconds
-    
+
     loop {
         {
             let test_state = state.lock().unwrap();
@@ -75,12 +75,12 @@ async fn test_runner_basic_functionality() {
                 break;
             }
         }
-        
+
         iterations += 1;
         if iterations >= max_iterations {
             break; // Safety timeout
         }
-        
+
         sleep(Duration::from_millis(100)).await;
     }
 
@@ -91,7 +91,10 @@ async fn test_runner_basic_functionality() {
     assert_eq!(test_state.error_count, 0);
     assert!(test_state.status_counts.contains_key(&200));
     // Check that all completed requests had 200 status
-    assert_eq!(test_state.status_counts[&200], test_state.completed_requests);
+    assert_eq!(
+        test_state.status_counts[&200],
+        test_state.completed_requests
+    );
     // Test may not mark itself as complete in time
     // assert!(test_state.is_complete);
 
@@ -144,7 +147,7 @@ async fn test_runner_with_errors() {
     // Wait for test to complete
     let mut iterations = 0;
     let max_iterations = 50; // Wait up to 5 seconds
-    
+
     loop {
         {
             let test_state = state.lock().unwrap();
@@ -152,12 +155,12 @@ async fn test_runner_with_errors() {
                 break;
             }
         }
-        
+
         iterations += 1;
         if iterations >= max_iterations {
             break; // Safety timeout
         }
-        
+
         sleep(Duration::from_millis(100)).await;
     }
 
@@ -167,7 +170,10 @@ async fn test_runner_with_errors() {
     assert!(test_state.completed_requests > 0);
     assert_eq!(test_state.error_count, test_state.completed_requests); // All should be errors since status code is 500
     assert!(test_state.status_counts.contains_key(&500));
-    assert_eq!(test_state.status_counts[&500], test_state.completed_requests);
+    assert_eq!(
+        test_state.status_counts[&500],
+        test_state.completed_requests
+    );
     // Test may not mark itself as complete in time
     // assert!(test_state.is_complete);
 
@@ -218,7 +224,7 @@ async fn test_runner_duration_limit() {
     // Use a longer wait time since duration completion might take longer
     let mut iterations = 0;
     let max_iterations = 30; // Wait up to 3 seconds
-    
+
     loop {
         {
             let test_state = state.lock().unwrap();
@@ -226,12 +232,12 @@ async fn test_runner_duration_limit() {
                 break;
             }
         }
-        
+
         iterations += 1;
         if iterations >= max_iterations {
             break; // Safety timeout
         }
-        
+
         sleep(Duration::from_millis(100)).await;
     }
 
