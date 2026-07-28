@@ -226,12 +226,12 @@ fn format_latency_short(latency_ms: f64) -> String {
 
 /// Overall RPS from completed requests / elapsed wall time.
 fn overall_throughput(app_state: &TestState) -> f64 {
-    let elapsed = if app_state.is_complete && app_state.end_time.is_some() {
-        app_state
-            .end_time
-            .unwrap()
-            .duration_since(app_state.start_time)
-            .as_secs_f64()
+    let elapsed = if app_state.is_complete {
+        if let Some(end) = app_state.end_time {
+            end.duration_since(app_state.start_time).as_secs_f64()
+        } else {
+            app_state.start_time.elapsed().as_secs_f64()
+        }
     } else {
         app_state.start_time.elapsed().as_secs_f64()
     };
@@ -475,15 +475,13 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, app_state: &TestState, ui_state: &UiStat
         .split(f.size());
 
     // Title and status with correct elapsed time
-    let elapsed = if app_state.is_complete && app_state.end_time.is_some() {
-        // For completed tests, use the frozen end time
-        app_state
-            .end_time
-            .unwrap()
-            .duration_since(app_state.start_time)
-            .as_secs_f64()
+    let elapsed = if app_state.is_complete {
+        if let Some(end) = app_state.end_time {
+            end.duration_since(app_state.start_time).as_secs_f64()
+        } else {
+            app_state.start_time.elapsed().as_secs_f64()
+        }
     } else {
-        // For running tests, use current elapsed time
         app_state.start_time.elapsed().as_secs_f64()
     };
     let status = if app_state.is_complete {
@@ -577,12 +575,12 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
     };
 
     // Get elapsed time - same as title calculation for consistency
-    let elapsed = if app_state.is_complete && app_state.end_time.is_some() {
-        app_state
-            .end_time
-            .unwrap()
-            .duration_since(app_state.start_time)
-            .as_secs_f64()
+    let elapsed = if app_state.is_complete {
+        if let Some(end) = app_state.end_time {
+            end.duration_since(app_state.start_time).as_secs_f64()
+        } else {
+            app_state.start_time.elapsed().as_secs_f64()
+        }
     } else {
         app_state.start_time.elapsed().as_secs_f64()
     };

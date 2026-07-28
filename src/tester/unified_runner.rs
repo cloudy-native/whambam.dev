@@ -179,7 +179,7 @@ impl UnifiedRunner {
                 submitted += 1;
 
                 // Yield occasionally so workers/metrics get scheduled
-                if submitted % 256 == 0 {
+                if submitted.is_multiple_of(256) {
                     tokio::task::yield_now().await;
                 }
             }

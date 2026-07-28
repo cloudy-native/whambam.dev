@@ -325,7 +325,7 @@ impl TestState {
         }
 
         // Update percentiles
-        if self.completed_requests % 10 == 0 {
+        if self.completed_requests.is_multiple_of(10) {
             // Divide by 1000 to convert back to milliseconds from the microsecond storage
             self.p50_latency = self.latency_histogram.value_at_quantile(0.5) as f64 / 1000.0;
             self.p90_latency = self.latency_histogram.value_at_quantile(0.9) as f64 / 1000.0;

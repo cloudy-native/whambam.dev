@@ -163,7 +163,7 @@ impl LockFreeMetrics {
         // Periodically process the queued metrics
         // We don't want to do this on every record call, so use a simple heuristic
         let completed = self.completed_requests.load(Ordering::Relaxed);
-        if completed % 100 == 0 {
+        if completed.is_multiple_of(100) {
             self.process_queued_metrics();
             self.update_statistics();
         }
