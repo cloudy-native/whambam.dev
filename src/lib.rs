@@ -55,8 +55,7 @@ fn parse_http_method(s: &str) -> Result<HttpMethod> {
         "TRACE" => Ok(HttpMethod::TRACE),
         "CONNECT" => Ok(HttpMethod::CONNECT),
         _ => Err(anyhow!(
-            "Invalid HTTP method: {}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT",
-            s
+            "Invalid HTTP method: {s}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT"
         )),
     }
 }

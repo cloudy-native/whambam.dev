@@ -158,7 +158,10 @@ async fn main() -> Result<()> {
         "OPTIONS" => HttpMethod::OPTIONS,
         "TRACE" => HttpMethod::TRACE,
         "CONNECT" => HttpMethod::CONNECT,
-        _ => return Err(anyhow!("Unsupported HTTP method: {}", args.method)),
+        _ => {
+            let method = &args.method;
+            return Err(anyhow!("Unsupported HTTP method: {method}"));
+        }
     };
     
     // Parse headers

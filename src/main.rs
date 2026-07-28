@@ -49,8 +49,7 @@ fn parse_http_method(s: &str) -> Result<HttpMethod> {
         "TRACE" => Ok(HttpMethod::TRACE),
         "CONNECT" => Ok(HttpMethod::CONNECT),
         _ => Err(anyhow!(
-            "Invalid HTTP method: {}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT",
-            s
+            "Invalid HTTP method: {s}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT"
         )),
     }
 }
@@ -147,8 +146,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '10s'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '10s'"
             )),
         }
     } else if duration_str.ends_with('m') {
@@ -157,8 +155,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n * 60),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '5m'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '5m'"
             )),
         }
     } else if duration_str.ends_with('h') {
@@ -167,8 +164,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n * 3600),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '2h'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '2h'"
             )),
         }
     } else {
@@ -176,8 +172,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match duration_str.parse::<u64>() {
             Ok(n) => Ok(n),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '10s', '5m', or '2h'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '10s', '5m', or '2h'"
             )),
         }
     }
