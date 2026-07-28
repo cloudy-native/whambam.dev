@@ -39,7 +39,7 @@ pub mod ui;
 #[cfg(test)]
 pub mod tests;
 
-use tester::{HttpMethod, SharedState, TestConfig, TestState};
+use tester::{HttpMethod, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner};
 use ui::App;
 
 /// Custom parser for HTTP methods.
@@ -49,11 +49,13 @@ fn parse_http_method(s: &str) -> Result<HttpMethod> {
         "POST" => Ok(HttpMethod::POST),
         "PUT" => Ok(HttpMethod::PUT),
         "DELETE" => Ok(HttpMethod::DELETE),
+        "PATCH" => Ok(HttpMethod::PATCH),
         "HEAD" => Ok(HttpMethod::HEAD),
         "OPTIONS" => Ok(HttpMethod::OPTIONS),
+        "TRACE" => Ok(HttpMethod::TRACE),
+        "CONNECT" => Ok(HttpMethod::CONNECT),
         _ => Err(anyhow!(
-            "Invalid HTTP method: {}. Supported methods: GET, POST, PUT, DELETE, HEAD, OPTIONS",
-            s
+            "Invalid HTTP method: {s}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT"
         )),
     }
 }
@@ -175,6 +177,10 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
 pub async fn run(args: Args) -> Result<()> {
     let _url = Url::parse(&args.url).context("Invalid URL")?;
 
+    if args.concurrent == 0 {
+        return Err(anyhow!("concurrent connections must be at least 1 (got 0)"));
+    }
+
     let duration_secs = parse_duration(&args.duration_str)?;
 
     let mut headers = Vec::new();
@@ -189,24 +195,32 @@ pub async fn run(args: Args) -> Result<()> {
     }
 
     if let Some(accept) = &args.accept {
-        headers.push(("Accept".to_string(), accept.clone()));
-    }
-
-    if args.body.is_some() || args.body_file.is_some() {
-        headers.push(("Content-Type".to_string(), args.content_type.clone()));
+        let has_accept = headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"));
+        if !has_accept {
+            headers.push(("Accept".to_string(), accept.clone()));
+        }
     }
 
     let body = match (&args.body, &args.body_file) {
         (Some(content), _) => Some(content.clone()),
-        (None, Some(file_path)) => match fs::read_to_string(Path::new(file_path)) {
-            Ok(content) => Some(content),
-            Err(e) => {
-                eprintln!("Warning: Failed to read body file '{file_path}': {e}. Request will be sent without a body.");
-                None
-            }
-        },
+        (None, Some(file_path)) => {
+            let content = fs::read_to_string(Path::new(file_path))
+                .with_context(|| format!("Failed to read body file: {file_path}"))?;
+            Some(content)
+        }
         _ => None,
     };
+
+    if body.is_some() {
+        let has_content_type = headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("content-type"));
+        if !has_content_type {
+            headers.push(("Content-Type".to_string(), args.content_type.clone()));
+        }
+    }
 
     let basic_auth = args.basic_auth.as_ref().and_then(|auth_str| {
         auth_str
@@ -242,16 +256,25 @@ pub async fn run(args: Args) -> Result<()> {
         proxy: args.proxy.clone(),
     };
 
-    let shared_state = Arc::new(Mutex::new(TestState::new(&config)));
-
     // Only interactive UI mode is supported
     if !args.no_ui {
-        let mut app = App::new(SharedState {
-            state: shared_state,
+        let state = Arc::new(Mutex::new(TestState::new(&config)));
+        let shared_state = SharedState {
+            state: Arc::clone(&state),
+        };
+        let mut app = App::new(shared_state);
+
+        // Start load generation before the UI (mirrors main.rs)
+        let config_clone = config.clone();
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut runner =
+                TestRunner::with_state(config_clone, SharedState { state: state_clone });
+            let _ = runner.start().await;
         });
+
         app.run()?;
     } else {
-        // Non-UI mode is not supported
         println!("The --no-ui option is currently not supported.");
         println!("The UI interface is required for this version.");
         return Err(anyhow!("UI mode is required for this version"));

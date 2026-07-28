@@ -33,5 +33,6 @@ export const siteConfig = {
   ],
   links: {
     github: "https://github.com/cloudy-native/whambam.dev",
+    linkedin: "https://www.linkedin.com/in/stephenharrison/",
   },
 };

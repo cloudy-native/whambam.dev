@@ -29,8 +29,11 @@ pub enum HttpMethods {
     POST,
     PUT,
     DELETE,
+    PATCH,
     HEAD,
     OPTIONS,
+    TRACE,
+    CONNECT,
 }
 
 impl std::fmt::Display for HttpMethods {
@@ -40,8 +43,11 @@ impl std::fmt::Display for HttpMethods {
             Self::POST => write!(f, "POST"),
             Self::PUT => write!(f, "PUT"),
             Self::DELETE => write!(f, "DELETE"),
+            Self::PATCH => write!(f, "PATCH"),
             Self::HEAD => write!(f, "HEAD"),
             Self::OPTIONS => write!(f, "OPTIONS"),
+            Self::TRACE => write!(f, "TRACE"),
+            Self::CONNECT => write!(f, "CONNECT"),
         }
     }
 }

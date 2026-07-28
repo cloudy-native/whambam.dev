@@ -22,11 +22,13 @@
 
 use ratatui::{
     backend::Backend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Clear, Dataset, Paragraph, Row, Table, Tabs},
+    widgets::{
+        Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph, Row, Table, Tabs,
+    },
     Frame,
 };
 
@@ -114,17 +116,38 @@ struct ChartConfig<'a> {
     num_y_labels: usize,
 }
 
+/// Ensure axis ranges are valid (single-point / empty short runs collapse otherwise).
+fn normalize_chart_bounds(x_min: f64, x_max: f64, y_max: f64) -> (f64, f64, f64) {
+    let mut x0 = x_min;
+    let mut x1 = x_max;
+    if !x0.is_finite() {
+        x0 = 0.0;
+    }
+    if !x1.is_finite() || x1 <= x0 {
+        x1 = x0 + 0.1;
+    }
+    let y = if y_max.is_finite() && y_max > 0.0 {
+        y_max
+    } else {
+        1.0
+    };
+    (x0, x1, y)
+}
+
 /// Create a throughput chart with the given parameters
 fn create_throughput_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
+    let (x_min, x_max, y_max) = normalize_chart_bounds(config.x_min, config.x_max, config.y_max);
+
     let throughput_dataset = vec![Dataset::default()
         .name("Throughput (req/s)")
         .marker(config.marker)
+        .graph_type(GraphType::Line)
         .style(Style::default().fg(Color::Cyan))
         .data(config.data)];
 
     // Create axis labels
-    let x_labels = create_time_axis_labels(config.x_min, config.x_max, config.num_x_labels);
-    let y_labels = create_throughput_axis_labels(0.0, config.y_max, config.num_y_labels);
+    let x_labels = create_time_axis_labels(x_min, x_max, config.num_x_labels);
+    let y_labels = create_throughput_axis_labels(0.0, y_max, config.num_y_labels);
 
     // Create and return the chart
     Chart::new(throughput_dataset)
@@ -137,29 +160,32 @@ fn create_throughput_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
             Axis::default()
                 .title(Span::styled("Time (s)", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([config.x_min, config.x_max])
+                .bounds([x_min, x_max])
                 .labels(x_labels),
         )
         .y_axis(
             Axis::default()
                 .title(Span::styled("Req/s", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([0.0, config.y_max])
+                .bounds([0.0, y_max])
                 .labels(y_labels),
         )
 }
 
 /// Create a latency chart with the given parameters
 fn create_latency_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
+    let (x_min, x_max, y_max) = normalize_chart_bounds(config.x_min, config.x_max, config.y_max);
+
     let latency_dataset = vec![Dataset::default()
         .name("Latency (ms)")
         .marker(config.marker)
+        .graph_type(GraphType::Line)
         .style(Style::default().fg(Color::Yellow))
         .data(config.data)];
 
     // Create axis labels
-    let x_labels = create_time_axis_labels(config.x_min, config.x_max, config.num_x_labels);
-    let y_labels = create_latency_axis_labels(0.0, config.y_max, config.num_y_labels);
+    let x_labels = create_time_axis_labels(x_min, x_max, config.num_x_labels);
+    let y_labels = create_latency_axis_labels(0.0, y_max, config.num_y_labels);
 
     // Create and return the chart
     Chart::new(latency_dataset)
@@ -175,16 +201,264 @@ fn create_latency_chart<'a>(config: ChartConfig<'a>) -> Chart<'a> {
             Axis::default()
                 .title(Span::styled("Time (s)", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([config.x_min, config.x_max])
+                .bounds([x_min, x_max])
                 .labels(x_labels),
         )
         .y_axis(
             Axis::default()
                 .title(Span::styled("", Style::default().fg(Color::Gray)))
                 .style(Style::default().fg(Color::Gray))
-                .bounds([0.0, config.y_max])
+                .bounds([0.0, y_max])
                 .labels(y_labels),
         )
+}
+
+/// Format a short latency value for chart titles.
+fn format_latency_short(latency_ms: f64) -> String {
+    if latency_ms < 1.0 {
+        format!("{:.0}μs", latency_ms * 1000.0)
+    } else if latency_ms < 1000.0 {
+        format!("{latency_ms:.1}ms")
+    } else {
+        format!("{:.2}s", latency_ms / 1000.0)
+    }
+}
+
+/// Overall RPS from completed requests / elapsed wall time.
+fn overall_throughput(app_state: &TestState) -> f64 {
+    let elapsed = if app_state.is_complete && app_state.end_time.is_some() {
+        app_state
+            .end_time
+            .unwrap()
+            .duration_since(app_state.start_time)
+            .as_secs_f64()
+    } else {
+        app_state.start_time.elapsed().as_secs_f64()
+    };
+    if elapsed > 0.0 && app_state.completed_requests > 0 {
+        app_state.completed_requests as f64 / elapsed
+    } else {
+        0.0
+    }
+}
+
+/// Last sampled chart y-value, or 0 if empty.
+fn last_series_y(data: &[(f64, f64)]) -> f64 {
+    data.last().map(|&(_, y)| y).unwrap_or(0.0)
+}
+
+/// Mean of series y-values (for latency chart title).
+fn mean_series_y(data: &[(f64, f64)]) -> f64 {
+    if data.is_empty() {
+        0.0
+    } else {
+        data.iter().map(|&(_, y)| y).sum::<f64>() / data.len() as f64
+    }
+}
+
+/// Max y in a series, floored to at least `floor`.
+fn series_y_max(data: &[(f64, f64)], floor: f64) -> f64 {
+    data.iter()
+        .map(|&(_, y)| y)
+        .fold(floor, |max, y| max.max(y))
+}
+
+/// Map latency (ms) into the throughput (req/s) drawing scale so both series share one Y axis.
+fn normalize_latency_for_overlay(
+    latency_data: &[(f64, f64)],
+    lat_max: f64,
+    thr_max: f64,
+) -> Vec<(f64, f64)> {
+    if lat_max <= 0.0 || thr_max <= 0.0 {
+        return latency_data.iter().map(|&(t, _)| (t, 0.0)).collect();
+    }
+    let scale = thr_max / lat_max;
+    latency_data
+        .iter()
+        .map(|&(t, lat)| (t, lat * scale))
+        .collect()
+}
+
+/// Numeric tick for the right latency axis (unit is shown only on the axis title).
+fn format_ms_tick(latency_ms: f64) -> String {
+    if latency_ms < 0.01 {
+        format!("{latency_ms:.3}")
+    } else if latency_ms < 1.0 {
+        format!("{latency_ms:.2}")
+    } else if latency_ms < 100.0 {
+        format!("{latency_ms:.1}")
+    } else {
+        format!("{:.0}", latency_ms.round())
+    }
+}
+
+/// Right-hand latency scale: bare numeric ticks (unit is in the header).
+fn render_right_latency_axis<B: Backend>(f: &mut Frame<B>, area: Rect, lat_max: f64) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+
+    // Align ticks with chart plot area (leave space for bottom X-axis labels)
+    let ticks_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+    if ticks_area.height == 0 {
+        return;
+    }
+
+    let label_rows: Vec<u16> = if ticks_area.height == 1 {
+        vec![0]
+    } else if ticks_area.height == 2 {
+        vec![0, 1]
+    } else {
+        vec![
+            0,
+            ticks_area.height / 2,
+            ticks_area.height.saturating_sub(1),
+        ]
+    };
+
+    for &row in &label_rows {
+        let t = if ticks_area.height <= 1 {
+            1.0
+        } else {
+            1.0 - (row as f64) / (ticks_area.height.saturating_sub(1) as f64)
+        };
+        let lat = lat_max * t;
+        let cell = Rect {
+            x: ticks_area.x,
+            y: ticks_area.y + row,
+            width: ticks_area.width,
+            height: 1,
+        };
+        f.render_widget(
+            Paragraph::new(format_ms_tick(lat))
+                .style(Style::default().fg(Color::Yellow))
+                .alignment(Alignment::Right),
+            cell,
+        );
+    }
+}
+
+/// Dashboard-only combined throughput + latency chart (shared X, dual Y via normalization).
+fn render_dashboard_combined_chart<B: Backend>(
+    f: &mut Frame<B>,
+    app_state: &TestState,
+    area: Rect,
+) {
+    let throughput_data: Vec<(f64, f64)> = app_state.throughput_data.clone().into();
+    let latency_data: Vec<(f64, f64)> = app_state.latency_data.clone().into();
+
+    let mut thr_max = series_y_max(&throughput_data, 1.0) * 1.1;
+    let lat_max = {
+        let m = series_y_max(&latency_data, 1.0) * 1.1;
+        if m.is_finite() && m > 0.0 {
+            m
+        } else {
+            1.0
+        }
+    };
+
+    let x_min = throughput_data
+        .first()
+        .or(latency_data.first())
+        .map(|&(x, _)| x)
+        .unwrap_or(0.0);
+    let x_max = throughput_data
+        .last()
+        .map(|&(x, _)| x)
+        .into_iter()
+        .chain(latency_data.last().map(|&(x, _)| x))
+        .fold(x_min, f64::max);
+    let (x_min, x_max, y) = normalize_chart_bounds(x_min, x_max, thr_max);
+    thr_max = y;
+
+    let latency_scaled = normalize_latency_for_overlay(&latency_data, lat_max, thr_max);
+
+    let overall_tps = overall_throughput(app_state);
+    let last_tps = last_series_y(&throughput_data);
+    let last_lat = last_series_y(&latency_data);
+    let avg_lat = mean_series_y(&latency_data);
+
+    // Outer frame; header row owns units so Y ticks stay bare numbers
+    let outer = Block::default().borders(Borders::ALL);
+    let inner = outer.inner(area);
+    f.render_widget(outer, area);
+
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+
+    // Header: left = throughput + req/s, right = latency + ms (right-aligned)
+    let header = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(vertical[0]);
+
+    let thr_header = format!("last {last_tps:.0} · overall {overall_tps:.0} req/s");
+    f.render_widget(
+        Paragraph::new(Span::styled(thr_header, Style::default().fg(Color::Cyan))),
+        header[0],
+    );
+
+    let lat_header = format!(
+        "last {} · avg {} ms",
+        format_ms_tick(last_lat),
+        format_ms_tick(avg_lat)
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(lat_header, Style::default().fg(Color::Yellow)))
+            .alignment(Alignment::Right),
+        header[1],
+    );
+
+    // Body: chart | right latency ticks
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(12), Constraint::Length(7)])
+        .split(vertical[1]);
+
+    let datasets = vec![
+        Dataset::default()
+            .name("throughput")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Cyan))
+            .data(&throughput_data),
+        Dataset::default()
+            .name("latency")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Yellow))
+            .data(&latency_scaled),
+    ];
+
+    let x_labels = create_time_axis_labels(x_min, x_max, 5);
+    let y_labels = create_throughput_axis_labels(0.0, thr_max, 4);
+
+    let chart = Chart::new(datasets)
+        .x_axis(
+            Axis::default()
+                .title(Span::styled("Time (s)", Style::default().fg(Color::Gray)))
+                .style(Style::default().fg(Color::Gray))
+                .bounds([x_min, x_max])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                // No unit title here — it collides with the top tick (e.g. "15130req/s")
+                .style(Style::default().fg(Color::Cyan))
+                .bounds([0.0, thr_max])
+                .labels(y_labels),
+        )
+        .hidden_legend_constraints((Constraint::Length(0), Constraint::Length(0)));
+
+    f.render_widget(chart, body[0]);
+    render_right_latency_axis(f, body[1], lat_max);
 }
 
 /// Main UI render function
@@ -451,66 +725,8 @@ fn render_dashboard<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: R
 
     f.render_widget(byte_text, stat_chunks[2]);
 
-    // Mini charts
-    let chart_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50), // Throughput chart
-            Constraint::Percentage(50), // Latency chart
-        ])
-        .split(chunks[1]);
-
-    // Throughput mini chart
-    let throughput_data: Vec<(f64, f64)> = app_state.throughput_data.clone().into();
-    let max_throughput = throughput_data
-        .iter()
-        .map(|&(_, y)| y)
-        .fold(1.0f64, |max, y| max.max(y));
-
-    // Create axis labels for mini chart (fewer labels for smaller space)
-    let mini_x_min = throughput_data.first().map(|&(x, _)| x).unwrap_or(0.0);
-    let mini_x_max = throughput_data.last().map(|&(x, _)| x).unwrap_or(60.0);
-    let mini_y_max = max_throughput * 1.1;
-
-    // Create throughput chart with Braille markers and fewer labels
-    let throughput_chart = create_throughput_chart(ChartConfig {
-        data: &throughput_data,
-        title: "Throughput over time",
-        marker: symbols::Marker::Braille,
-        x_min: mini_x_min,
-        x_max: mini_x_max,
-        y_max: mini_y_max,
-        num_x_labels: 3, // Fewer x-axis labels for mini chart
-        num_y_labels: 3, // Fewer y-axis labels for mini chart
-    });
-
-    f.render_widget(throughput_chart, chart_chunks[0]);
-
-    // Latency mini chart
-    let latency_data: Vec<(f64, f64)> = app_state.latency_data.clone().into();
-    let max_latency = latency_data
-        .iter()
-        .map(|&(_, y)| y)
-        .fold(1.0f64, |max, y| max.max(y));
-
-    // Create axis labels for mini latency chart
-    let mini_lat_x_min = latency_data.first().map(|&(x, _)| x).unwrap_or(0.0);
-    let mini_lat_x_max = latency_data.last().map(|&(x, _)| x).unwrap_or(60.0);
-    let mini_lat_y_max = max_latency * 1.1;
-
-    // Create latency chart with Braille markers and fewer labels
-    let latency_chart = create_latency_chart(ChartConfig {
-        data: &latency_data,
-        title: "Latency over time",
-        marker: symbols::Marker::Braille,
-        x_min: mini_lat_x_min,
-        x_max: mini_lat_x_max,
-        y_max: mini_lat_y_max,
-        num_x_labels: 3, // Fewer x-axis labels for mini chart
-        num_y_labels: 3, // Fewer y-axis labels for mini chart
-    });
-
-    f.render_widget(latency_chart, chart_chunks[1]);
+    // Combined throughput + latency (shared time axis; latency on right scale)
+    render_dashboard_combined_chart(f, app_state, chunks[1]);
 }
 
 /// Render the charts tab
@@ -530,21 +746,24 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
         .map(|&(_, y)| y)
         .fold(1.0f64, |max, y| max.max(y));
 
-    // Create axis labels with more detail for the full-size chart
     let x_min = throughput_data.first().map(|&(x, _)| x).unwrap_or(0.0);
-    let x_max = throughput_data.last().map(|&(x, _)| x).unwrap_or(60.0);
+    let x_max = throughput_data.last().map(|&(x, _)| x).unwrap_or(30.0);
     let y_max = max_throughput * 1.1;
 
-    // Create throughput chart with Braille markers and more labels
+    let overall_tps = overall_throughput(app_state);
+    let last_tps = last_series_y(&throughput_data);
+    let throughput_title =
+        format!("Throughput over time · last {last_tps:.0} r/s · overall {overall_tps:.0} r/s");
+
     let throughput_chart = create_throughput_chart(ChartConfig {
         data: &throughput_data,
-        title: "Throughput over time",
+        title: &throughput_title,
         marker: symbols::Marker::Braille,
         x_min,
         x_max,
         y_max,
-        num_x_labels: 6, // More x-axis labels for full chart
-        num_y_labels: 6, // More y-axis labels for full chart
+        num_x_labels: 6,
+        num_y_labels: 6,
     });
 
     f.render_widget(throughput_chart, chunks[0]);
@@ -556,21 +775,27 @@ fn render_charts<B: Backend>(f: &mut Frame<B>, app_state: &TestState, area: Rect
         .map(|&(_, y)| y)
         .fold(1.0f64, |max, y| max.max(y));
 
-    // Create axis labels with more detail for the full-size chart
     let l_x_min = latency_data.first().map(|&(x, _)| x).unwrap_or(0.0);
-    let l_x_max = latency_data.last().map(|&(x, _)| x).unwrap_or(60.0);
+    let l_x_max = latency_data.last().map(|&(x, _)| x).unwrap_or(30.0);
     let l_y_max = max_latency * 1.1;
 
-    // Create latency chart with Braille markers and more labels
+    let last_lat = last_series_y(&latency_data);
+    let avg_lat = mean_series_y(&latency_data);
+    let latency_title = format!(
+        "Latency over time · last {} · avg {}",
+        format_latency_short(last_lat),
+        format_latency_short(avg_lat)
+    );
+
     let latency_chart = create_latency_chart(ChartConfig {
         data: &latency_data,
-        title: "Latency over time",
+        title: &latency_title,
         marker: symbols::Marker::Braille,
         x_min: l_x_min,
         x_max: l_x_max,
         y_max: l_y_max,
-        num_x_labels: 6, // More x-axis labels for full chart
-        num_y_labels: 6, // More y-axis labels for full chart
+        num_x_labels: 6,
+        num_y_labels: 6,
     });
 
     f.render_widget(latency_chart, chunks[1]);

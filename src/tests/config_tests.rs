@@ -20,6 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#![allow(deprecated)]
+
 use crate::tester::{HttpMethod, RequestMetric, TestConfig, TestState};
 use std::time::Instant;
 

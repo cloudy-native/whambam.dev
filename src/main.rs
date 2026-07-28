@@ -43,11 +43,13 @@ fn parse_http_method(s: &str) -> Result<HttpMethod> {
         "POST" => Ok(HttpMethod::POST),
         "PUT" => Ok(HttpMethod::PUT),
         "DELETE" => Ok(HttpMethod::DELETE),
+        "PATCH" => Ok(HttpMethod::PATCH),
         "HEAD" => Ok(HttpMethod::HEAD),
         "OPTIONS" => Ok(HttpMethod::OPTIONS),
+        "TRACE" => Ok(HttpMethod::TRACE),
+        "CONNECT" => Ok(HttpMethod::CONNECT),
         _ => Err(anyhow!(
-            "Invalid HTTP method: {}. Supported methods: GET, POST, PUT, DELETE, HEAD, OPTIONS",
-            s
+            "Invalid HTTP method: {s}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT"
         )),
     }
 }
@@ -144,8 +146,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '10s'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '10s'"
             )),
         }
     } else if duration_str.ends_with('m') {
@@ -154,8 +155,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n * 60),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '5m'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '5m'"
             )),
         }
     } else if duration_str.ends_with('h') {
@@ -164,8 +164,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match num_part.parse::<u64>() {
             Ok(n) => Ok(n * 3600),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '2h'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '2h'"
             )),
         }
     } else {
@@ -173,8 +172,7 @@ fn parse_duration(duration_str: &str) -> Result<u64> {
         match duration_str.parse::<u64>() {
             Ok(n) => Ok(n),
             Err(_) => Err(anyhow!(
-                "Invalid duration format: {}. Expected format like '10s', '5m', or '2h'",
-                duration_str
+                "Invalid duration format: {duration_str}. Expected format like '10s', '5m', or '2h'"
             )),
         }
     }
@@ -185,6 +183,10 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let args = Args::parse();
     let _url = Url::parse(&args.url).context("Invalid URL")?;
+
+    if args.concurrent == 0 {
+        return Err(anyhow!("concurrent connections must be at least 1 (got 0)"));
+    }
 
     // Parse the duration string
     let duration_secs = parse_duration(&args.duration_str)?;
@@ -206,13 +208,12 @@ async fn main() -> Result<()> {
 
     // Add Accept header if specified
     if let Some(accept) = &args.accept {
-        headers.push(("Accept".to_string(), accept.clone()));
-    }
-
-    // Add Content-Type header if any body is provided
-    let body_provided = args.body.is_some() || args.body_file.is_some();
-    if body_provided {
-        headers.push(("Content-Type".to_string(), args.content_type.clone()));
+        let has_accept = headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("accept"));
+        if !has_accept {
+            headers.push(("Accept".to_string(), accept.clone()));
+        }
     }
 
     // Process request body (either direct or from file)
@@ -224,21 +225,22 @@ async fn main() -> Result<()> {
         (None, Some(file_path)) => {
             // Body from file
             let path = Path::new(file_path);
-            if !path.exists() {
-                eprintln!("Warning: Body file not found: {file_path}");
-                None
-            } else {
-                match fs::read_to_string(path) {
-                    Ok(content) => Some(content),
-                    Err(e) => {
-                        eprintln!("Warning: Failed to read body file: {file_path}: {e}");
-                        None
-                    }
-                }
-            }
+            let content = fs::read_to_string(path)
+                .with_context(|| format!("Failed to read body file: {file_path}"))?;
+            Some(content)
         }
         (None, None) => None,
     };
+
+    // Add Content-Type header if we actually have a body
+    if body.is_some() {
+        let has_content_type = headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("content-type"));
+        if !has_content_type {
+            headers.push(("Content-Type".to_string(), args.content_type.clone()));
+        }
+    }
 
     // Parse basic authentication if provided
     let basic_auth = args.basic_auth.as_ref().and_then(|auth_str| {

@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use floating_duration::TimeAsFloat;
 use reqwest::Client;
 use std::{
@@ -34,7 +34,7 @@ use tokio::sync::mpsc;
 use url::Url;
 
 use super::metrics::SharedMetrics;
-use super::types::{HttpMethod, Message, RequestMetric, SharedState, TestConfig};
+use super::types::{HttpMethod, RequestMetric, SharedState, TestConfig};
 
 /// Unified runner implementation that combines worker pool and lock-free metrics
 pub struct UnifiedRunner {
@@ -42,16 +42,12 @@ pub struct UnifiedRunner {
     metrics: SharedMetrics,
     shared_state: Option<SharedState>,
     is_running: Arc<AtomicBool>,
-    tx: mpsc::Sender<Message>,
-    #[allow(dead_code)]
-    rx: mpsc::Receiver<Message>,
 }
 
 impl UnifiedRunner {
     /// Create a new unified runner with the given configuration
     #[allow(dead_code)]
     pub fn new(config: TestConfig) -> Self {
-        let (tx, rx) = mpsc::channel::<Message>(config.concurrent * 2);
         let is_running = Arc::new(AtomicBool::new(true));
         let metrics = SharedMetrics::new(config.url.clone(), config.method.to_string());
 
@@ -60,14 +56,11 @@ impl UnifiedRunner {
             metrics,
             shared_state: None,
             is_running,
-            tx,
-            rx,
         }
     }
 
     /// Create a new unified runner with the given configuration and shared state
     pub fn with_state(config: TestConfig, shared_state: SharedState) -> Self {
-        let (tx, rx) = mpsc::channel::<Message>(config.concurrent * 2);
         let is_running = Arc::new(AtomicBool::new(true));
         let metrics = SharedMetrics::new(config.url.clone(), config.method.to_string());
 
@@ -76,8 +69,6 @@ impl UnifiedRunner {
             metrics,
             shared_state: Some(shared_state),
             is_running,
-            tx,
-            rx,
         }
     }
 
@@ -101,25 +92,44 @@ impl UnifiedRunner {
 
     /// Start the test in a separate task
     pub async fn start(&mut self) -> Result<()> {
+        if self.config.concurrent == 0 {
+            return Err(anyhow!("concurrent connections must be at least 1 (got 0)"));
+        }
+
         // Validate URL
         let url = Url::parse(&self.config.url).context("Invalid URL")?;
 
-        // Clone values for task
-        let load_tx = self.tx.clone();
         let is_running = Arc::clone(&self.is_running);
         let config = self.config.clone();
         let metrics = self.metrics.clone();
+        let shared_state = self.shared_state.clone();
 
-        // Create a channel for job completion with much larger capacity
-        let (job_tx, mut job_rx) = mpsc::channel::<RequestMetric>(config.concurrent * 50);
+        // Metric channel: workers produce, a single consumer updates metrics/UI
+        let metric_capacity = config.concurrent.saturating_mul(50).max(1);
+        let (metric_tx, mut metric_rx) = mpsc::channel::<RequestMetric>(metric_capacity);
 
-        // Spawn load test task
+        // Metrics consumer (also drives UI shared state)
+        let metrics_clone = metrics.clone();
+        let shared_for_metrics = shared_state.clone();
+        let metrics_handle = tokio::spawn(async move {
+            while let Some(metric) = metric_rx.recv().await {
+                metrics_clone.record(&metric);
+                if let Some(state) = &shared_for_metrics {
+                    let mut guard = state.state.lock().unwrap();
+                    guard.update(metric);
+                }
+            }
+            metrics_clone.process_metrics();
+        });
+
+        // Load generation + worker lifecycle
+        let load_is_running = Arc::clone(&is_running);
+        let load_metrics = metrics.clone();
+        let load_shared = shared_state.clone();
         let _load_test_handle = tokio::spawn(async move {
-            // Create HTTP client with pooling configuration
             let client = create_http_client(&config);
             let start_time = Instant::now();
 
-            // Calculate test limits
             let max_requests = if config.requests > 0 {
                 config.requests
             } else {
@@ -132,156 +142,79 @@ impl UnifiedRunner {
                 None
             };
 
-            // Create a worker pool with shared ownership
-            let worker_pool = Arc::new(WorkerPool::new(
+            let worker_pool = WorkerPool::new(
                 client,
                 config.concurrent,
-                job_tx,
-                Arc::clone(&is_running),
+                metric_tx,
+                Arc::clone(&load_is_running),
                 config.rate_limit,
-            ));
+            );
 
-            // A much simpler approach - submit a large number of jobs at once
-            let mut _submitted_jobs = 0;
-            let job_capacity = 1_000_000; // 1M job limit
-
-            // Calculate how many jobs to actually submit
-            // If limited by requests, use that, otherwise use our large capacity
-            let jobs_to_submit = if max_requests > 0 {
-                max_requests.min(job_capacity)
-            } else {
-                job_capacity
-            };
-
-            // Create a separate task for job submission to avoid blocking
-            let job_submitter = tokio::spawn({
-                let is_running_clone = Arc::clone(&is_running);
-                let url_clone = url.clone();
-                let headers_clone = config.headers.clone();
-                let body_clone = config.body.clone();
-                let auth_clone = config.basic_auth.clone();
-                let method_clone = config.method;
-                let timeout_clone = config.timeout;
-                let pool_clone = Arc::clone(&worker_pool);
-
-                async move {
-                    let mut submitted = 0;
-
-                    // Submit jobs in batches to avoid memory issues
-                    let batch_size = 1000;
-                    let num_batches = jobs_to_submit.div_ceil(batch_size);
-
-                    for _ in 0..num_batches {
-                        if !is_running_clone.load(Ordering::SeqCst) {
-                            break; // Stop if test is cancelled
-                        }
-
-                        // Calculate this batch size
-                        let current_batch = batch_size.min(jobs_to_submit - submitted);
-
-                        // Submit a batch of jobs
-                        for _ in 0..current_batch {
-                            let job = RequestJob {
-                                url: url_clone.clone(),
-                                headers: headers_clone.clone(),
-                                body: body_clone.clone(),
-                                basic_auth: auth_clone.clone(),
-                                method: method_clone,
-                                timeout: timeout_clone,
-                                start_time,
-                            };
-
-                            // Use async submission to properly backpressure
-                            pool_clone.submit_job(job).await;
-                            submitted += 1;
-                        }
-
-                        // Let other tasks run
-                        tokio::task::yield_now().await;
-                    }
-
-                    submitted
-                }
+            // Stop accepting new work when duration elapses
+            let duration_timer = max_duration.map(|max_dur| {
+                let flag = Arc::clone(&load_is_running);
+                tokio::spawn(async move {
+                    tokio::time::sleep(max_dur).await;
+                    flag.store(false, Ordering::SeqCst);
+                })
             });
 
-            // Start a duration-based timer if needed
-            let duration_timer = if let Some(max_dur) = max_duration {
-                // This task will stop the worker pool when the max duration is reached
-                let pool_for_timer = Arc::clone(&worker_pool);
-                let timer_handle = tokio::spawn(async move {
-                    tokio::time::sleep(max_dur).await;
-                    pool_for_timer.stop();
-                });
-                Some(timer_handle)
-            } else {
-                None
-            };
+            // Submit jobs while running and under the request cap (no fixed 1M ceiling).
+            // Channel backpressure keeps memory bounded.
+            let mut submitted = 0usize;
+            while load_is_running.load(Ordering::SeqCst) && submitted < max_requests {
+                let job = RequestJob {
+                    url: url.clone(),
+                    headers: config.headers.clone(),
+                    body: config.body.clone(),
+                    basic_auth: config.basic_auth.clone(),
+                    method: config.method,
+                    timeout: config.timeout,
+                    start_time,
+                };
 
-            // Wait for the job submitter to complete
-            if let Ok(count) = job_submitter.await {
-                _submitted_jobs = count;
-            }
-
-            // If we have a duration timer, wait for it
-            if let Some(timer) = duration_timer {
-                // We don't care about the result, just making sure it's done
-                let _ = timer.await;
-            }
-
-            // Job submitters are already awaited in the code above
-
-            // Wait a bit to allow metrics to be processed
-            tokio::time::sleep(Duration::from_millis(500)).await;
-
-            // Mark the metrics as complete
-            metrics.mark_complete();
-
-            // Send completion message
-            let _ = load_tx.send(Message::TestComplete).await;
-
-            // We can't use wait() with Arc since it requires ownership
-            // Just sleep a bit longer for workers to complete
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        });
-
-        // Spawn metrics processing task
-        let metrics_clone = self.metrics.clone();
-        let metrics_tx = self.tx.clone();
-        let shared_state = self.shared_state.clone();
-
-        let _metrics_handle = tokio::spawn(async move {
-            // Efficiently process batched metrics from job channel
-            while let Some(metric) = job_rx.recv().await {
-                // Record the metric in the lock-free collector
-                metrics_clone.record(&metric);
-
-                // If we have a shared state, update it as well for UI compatibility
-                if let Some(state) = &shared_state {
-                    let mut guard = state.state.lock().unwrap();
-                    guard.update(metric.clone());
+                if !worker_pool.submit_job(job).await {
+                    break;
                 }
+                submitted += 1;
 
-                // Send the message for any listeners
-                let _ = metrics_tx.send(Message::RequestComplete(metric)).await;
+                // Yield occasionally so workers/metrics get scheduled
+                if submitted % 256 == 0 {
+                    tokio::task::yield_now().await;
+                }
             }
 
-            // Do a final metrics processing
-            metrics_clone.process_metrics();
+            // Stop further submission (duration path may already have done this)
+            load_is_running.store(false, Ordering::SeqCst);
+            if let Some(timer) = duration_timer {
+                timer.abort();
+            }
+
+            // Close the job queue and wait for workers to drain queued + in-flight work.
+            // Once workers exit they drop metric senders; the consumer then finishes.
+            worker_pool.close_and_wait().await;
+            let _ = metrics_handle.await;
+
+            // Silence unused-variable when submission is empty (e.g. stopped immediately)
+            let _ = submitted;
+
+            // Mark complete on lock-free metrics and UI state (do not rely only on metric updates)
+            load_metrics.mark_complete();
+            if let Some(state) = &load_shared {
+                if let Ok(mut guard) = state.state.lock() {
+                    guard.mark_complete();
+                }
+            }
         });
 
-        // Start metrics processor task
+        // Periodic stats processor for lock-free metrics
         let metrics_ref = self.metrics.metrics.clone();
         let _processor_handle = tokio::spawn(async move {
             while !metrics_ref.is_complete() {
-                // Process queued metrics periodically
                 metrics_ref.process_queued_metrics();
                 metrics_ref.update_statistics();
-
-                // Sleep a bit to reduce CPU usage
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
-
-            // Final processing
             metrics_ref.process_queued_metrics();
             metrics_ref.update_statistics();
         });
@@ -312,8 +245,7 @@ pub struct RequestJob {
 pub struct WorkerPool {
     #[allow(dead_code)]
     client: Client,
-    job_sender: mpsc::Sender<RequestJob>,
-    #[allow(dead_code)]
+    job_sender: Option<mpsc::Sender<RequestJob>>,
     worker_handles: Vec<tokio::task::JoinHandle<()>>,
     is_running: Arc<AtomicBool>,
 }
@@ -327,13 +259,12 @@ impl WorkerPool {
         is_running: Arc<AtomicBool>,
         rate_limit: f64,
     ) -> Self {
-        // Create a channel for distributing jobs with much larger buffer
-        let (job_sender, job_receiver) = mpsc::channel::<RequestJob>(concurrency * 100);
+        let queue_capacity = concurrency.saturating_mul(100).max(1);
+        let (job_sender, job_receiver) = mpsc::channel::<RequestJob>(queue_capacity);
 
         // Share the job receiver among workers
         let job_receiver = Arc::new(tokio::sync::Mutex::new(job_receiver));
 
-        // Create worker tasks
         let mut worker_handles = Vec::with_capacity(concurrency);
 
         for _ in 0..concurrency {
@@ -342,11 +273,8 @@ impl WorkerPool {
             let worker_metric_sender = metric_sender.clone();
             let worker_is_running = Arc::clone(&is_running);
             let worker_rate_limit = rate_limit;
-
-            // Create a semaphore for this worker to control its own concurrency
             let worker_sem = Arc::new(tokio::sync::Semaphore::new(1));
 
-            // Spawn the worker task
             let handle = tokio::spawn(async move {
                 Self::worker_loop(
                     worker_client,
@@ -362,43 +290,39 @@ impl WorkerPool {
             worker_handles.push(handle);
         }
 
+        // metric_sender clones live in workers; drop the original so the metric
+        // channel closes once all workers exit.
+        drop(metric_sender);
+
         WorkerPool {
             client,
-            job_sender,
+            job_sender: Some(job_sender),
             worker_handles,
             is_running,
         }
     }
 
-    /// Submit a job to the worker pool
-    pub async fn submit_job(&self, job: RequestJob) {
-        // Send the job to the worker pool
-        if self.is_running.load(Ordering::SeqCst) {
-            let _ = self.job_sender.send(job).await;
-        }
-    }
-
-    /// Try to submit a job to the worker pool without awaiting
-    /// Returns true if the job was submitted, false otherwise
-    #[allow(dead_code)]
-    pub fn try_submit_job(&self, job: RequestJob) -> bool {
-        // Check if we're still running
+    /// Submit a job to the worker pool. Returns false if stopped or channel closed.
+    pub async fn submit_job(&self, job: RequestJob) -> bool {
         if !self.is_running.load(Ordering::SeqCst) {
             return false;
         }
-
-        // Try to send the job to the worker pool
-        self.job_sender.try_send(job).is_ok()
+        match &self.job_sender {
+            Some(sender) => sender.send(job).await.is_ok(),
+            None => false,
+        }
     }
 
-    /// Stop the worker pool
+    /// Stop accepting new work
     pub fn stop(&self) {
         self.is_running.store(false, Ordering::SeqCst);
     }
 
-    /// Wait for all workers to complete
-    #[allow(dead_code)]
-    pub async fn wait(self) {
+    /// Close the job queue and wait for all workers to finish draining
+    pub async fn close_and_wait(mut self) {
+        self.stop();
+        // Dropping the sender closes the channel so workers exit after drain
+        self.job_sender.take();
         if !self.worker_handles.is_empty() {
             let _ = futures::future::join_all(self.worker_handles).await;
         }
@@ -413,38 +337,36 @@ impl WorkerPool {
         sem: Arc<tokio::sync::Semaphore>,
         rate_limit: f64,
     ) {
-        while is_running.load(Ordering::SeqCst) {
-            // Get the next job with timeout to check for stop condition
+        loop {
+            // While running, poll with timeout so we notice stop signals.
+            // After stop, block on recv until the queue is drained / closed.
             let job_result = {
                 let mut receiver = job_receiver.lock().await;
-                tokio::select! {
-                    job = receiver.recv() => job,
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                        // Check if we should stop
-                        if !is_running.load(Ordering::SeqCst) {
-                            None
-                        } else {
+                if is_running.load(Ordering::SeqCst) {
+                    tokio::select! {
+                        job = receiver.recv() => job,
+                        _ = tokio::time::sleep(Duration::from_millis(100)) => {
                             continue;
                         }
                     }
+                } else {
+                    // Drain remaining jobs until the sender is dropped
+                    receiver.recv().await
                 }
             };
 
             let job = match job_result {
                 Some(job) => job,
-                None => break, // No more jobs or stopping
+                None => break, // channel closed and empty
             };
 
-            // Apply rate limiting if configured
             if rate_limit > 0.0 {
                 let delay_ms = (1000.0 / rate_limit) as u64;
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
             }
 
-            // Acquire a permit from the semaphore
             let _permit = sem.acquire().await.unwrap();
 
-            // Execute the request
             let result = Self::execute_request(
                 &client,
                 job.url,
@@ -457,7 +379,6 @@ impl WorkerPool {
             )
             .await;
 
-            // Send the result metric
             let _ = metric_sender.send(result).await;
         }
     }
@@ -474,67 +395,57 @@ impl WorkerPool {
         timeout: u64,
         start_time: Instant,
     ) -> RequestMetric {
-        // Calculate approximate bytes sent
         let bytes_sent = {
             let mut total = 0u64;
 
-            // Method and path
             total += method.to_string().len() as u64;
             total += url.path().len() as u64;
             if let Some(query) = url.query() {
                 total += query.len() as u64;
             }
 
-            // Headers
             for (name, value) in headers {
                 total += name.len() as u64 + value.len() as u64 + 4;
             }
 
-            // Body
             if let Some(body) = &body {
                 total += body.len() as u64;
             }
 
-            // Basic overhead
             total += 50;
-
             total
         };
 
-        // Start request timing
         let request_start = Instant::now();
 
-        // Create the request builder based on method
         let mut request_builder = match method {
             HttpMethod::GET => client.get(url),
             HttpMethod::POST => client.post(url),
             HttpMethod::PUT => client.put(url),
             HttpMethod::DELETE => client.delete(url),
+            HttpMethod::PATCH => client.patch(url),
             HttpMethod::HEAD => client.head(url),
             HttpMethod::OPTIONS => client.request(reqwest::Method::OPTIONS, url),
+            HttpMethod::TRACE => client.request(reqwest::Method::TRACE, url),
+            HttpMethod::CONNECT => client.request(reqwest::Method::CONNECT, url),
         };
 
-        // Set timeout
         if timeout > 0 {
             request_builder = request_builder.timeout(Duration::from_secs(timeout));
         }
 
-        // Add headers
         for (name, value) in headers {
             request_builder = request_builder.header(name, value);
         }
 
-        // Add basic auth
         if let Some((username, password)) = &basic_auth {
             request_builder = request_builder.basic_auth(username, Some(password));
         }
 
-        // Add body
         if let Some(body_content) = &body {
             request_builder = request_builder.body(body_content.clone());
         }
 
-        // Send request and process response
         let result = request_builder.send().await;
         let duration = request_start.elapsed();
 
@@ -574,7 +485,6 @@ impl WorkerPool {
 fn create_http_client(config: &TestConfig) -> Client {
     let mut client_builder = Client::builder();
 
-    // Configure proxy if specified
     if let Some(proxy) = &config.proxy {
         let proxy_url = format!("http://{proxy}");
         if let Ok(proxy) = reqwest::Proxy::http(&proxy_url) {
@@ -582,28 +492,23 @@ fn create_http_client(config: &TestConfig) -> Client {
         }
     }
 
-    // Configure HTTP options
     if config.disable_compression {
         client_builder = client_builder.no_gzip().no_brotli().no_deflate();
-    }
-
-    if config.disable_keepalive {
-        client_builder = client_builder.tcp_nodelay(true).pool_max_idle_per_host(0);
     }
 
     if config.disable_redirects {
         client_builder = client_builder.redirect(reqwest::redirect::Policy::none());
     }
 
-    // Optimize connection pooling
-    client_builder = client_builder
-        .pool_max_idle_per_host(config.concurrent * 2)
-        .pool_idle_timeout(Duration::from_secs(300))
-        .tcp_keepalive(Duration::from_secs(60));
+    // Apply pool settings last so disable-keepalive is not overwritten
+    if config.disable_keepalive {
+        client_builder = client_builder.tcp_nodelay(true).pool_max_idle_per_host(0);
+    } else {
+        client_builder = client_builder
+            .pool_max_idle_per_host(config.concurrent * 2)
+            .pool_idle_timeout(Duration::from_secs(300))
+            .tcp_keepalive(Duration::from_secs(60));
+    }
 
-    // Build client
-    client_builder.build().unwrap_or_else(|_| {
-        // Fallback to default client if build fails
-        Client::new()
-    })
+    client_builder.build().unwrap_or_else(|_| Client::new())
 }
