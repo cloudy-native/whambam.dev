@@ -37,8 +37,11 @@ pub enum HttpMethod {
     POST,
     PUT,
     DELETE,
+    PATCH,
     HEAD,
     OPTIONS,
+    TRACE,
+    CONNECT,
 }
 
 impl std::fmt::Display for HttpMethod {
@@ -48,8 +51,11 @@ impl std::fmt::Display for HttpMethod {
             HttpMethod::POST => write!(f, "POST"),
             HttpMethod::PUT => write!(f, "PUT"),
             HttpMethod::DELETE => write!(f, "DELETE"),
+            HttpMethod::PATCH => write!(f, "PATCH"),
             HttpMethod::HEAD => write!(f, "HEAD"),
             HttpMethod::OPTIONS => write!(f, "OPTIONS"),
+            HttpMethod::TRACE => write!(f, "TRACE"),
+            HttpMethod::CONNECT => write!(f, "CONNECT"),
         }
     }
 }
@@ -173,6 +179,9 @@ pub struct TestState {
     // Current throughput
     pub current_throughput: f64,
 
+    // Chart sampling: completed count at last sample (for interval RPS)
+    last_sample_completed: usize,
+
     // Test completion
     pub is_complete: bool,
     pub should_quit: bool,
@@ -182,6 +191,12 @@ pub struct TestState {
     pub total_bytes_sent: u64,
     pub total_bytes_received: u64,
 }
+
+/// How often to append chart samples (seconds). Short enough for sub-second runs.
+const CHART_SAMPLE_INTERVAL_SECS: f64 = 0.1;
+
+/// Max chart samples retained (~30s at 0.1s interval).
+const CHART_HISTORY_LEN: usize = 300;
 
 impl TestState {
     /// Reset the state for a new test run
@@ -213,6 +228,7 @@ impl TestState {
         self.p95_latency = 0.0;
         self.p99_latency = 0.0;
         self.current_throughput = 0.0;
+        self.last_sample_completed = 0;
 
         // Reset status
         self.is_complete = false;
@@ -246,8 +262,8 @@ impl TestState {
             // Higher precision for latency histogram (5 significant figures instead of 3)
             latency_histogram: Histogram::<u64>::new(5).unwrap(),
 
-            throughput_data: VecDeque::with_capacity(60),
-            latency_data: VecDeque::with_capacity(60),
+            throughput_data: VecDeque::with_capacity(CHART_HISTORY_LEN),
+            latency_data: VecDeque::with_capacity(CHART_HISTORY_LEN),
 
             min_latency: f64::MAX,
             max_latency: 0.0,
@@ -257,6 +273,7 @@ impl TestState {
             p99_latency: 0.0,
 
             current_throughput: 0.0,
+            last_sample_completed: 0,
 
             is_complete: false,
             should_quit: false,
@@ -316,23 +333,113 @@ impl TestState {
             self.p99_latency = self.latency_histogram.value_at_quantile(0.99) as f64 / 1000.0;
         }
 
-        // Update throughput calculations once per second
         let elapsed = self.start_time.elapsed().as_secs_f64();
-        let last_throughput_time = self.throughput_data.back().map(|&(t, _)| t).unwrap_or(0.0);
 
-        if elapsed - last_throughput_time >= 1.0 || self.throughput_data.is_empty() {
-            // Calculate current throughput (requests per second)
-            if !self.recent_throughput.is_empty() {
-                let window_size = self.recent_throughput.len().min(10) as f64;
-                let sum: f64 = self.recent_throughput.iter().map(|&(_, tps)| tps).sum();
-                self.current_throughput = sum / window_size;
+        // Count requests into 100ms buckets first so samples can use them
+        let bucket = (elapsed * 10.0).floor() / 10.0;
+        let last_entry = self.recent_throughput.back().cloned();
+        match last_entry {
+            Some((b, count)) if (b - bucket).abs() < f64::EPSILON => {
+                self.recent_throughput.pop_back();
+                self.recent_throughput.push_back((bucket, count + 1.0));
             }
+            _ => {
+                self.recent_throughput.push_back((bucket, 1.0));
+                if self.recent_throughput.len() > 30 {
+                    self.recent_throughput.pop_front();
+                }
+            }
+        }
 
-            // Add data points for charts
-            self.throughput_data
-                .push_back((elapsed, self.current_throughput));
-            if self.throughput_data.len() > 60 {
-                self.throughput_data.pop_front();
+        // Sample charts often enough for short (sub-second) runs
+        let last_sample_t = self
+            .throughput_data
+            .back()
+            .map(|&(t, _)| t)
+            .unwrap_or(-CHART_SAMPLE_INTERVAL_SECS);
+
+        if elapsed - last_sample_t >= CHART_SAMPLE_INTERVAL_SECS || self.throughput_data.is_empty()
+        {
+            self.push_chart_sample(elapsed);
+        }
+
+        // Check if test is complete based on observed metrics
+        if (self.target_requests > 0 && self.completed_requests >= self.target_requests)
+            || (self.duration > 0 && elapsed >= self.duration as f64)
+        {
+            self.mark_complete();
+        }
+    }
+
+    /// Append one throughput/latency chart sample at `elapsed` seconds.
+    fn push_chart_sample(&mut self, elapsed: f64) {
+        let dt = if self.throughput_data.is_empty() {
+            elapsed.max(1e-6)
+        } else {
+            let last_t = self.throughput_data.back().map(|&(t, _)| t).unwrap_or(0.0);
+            (elapsed - last_t).max(1e-6)
+        };
+        let dc = self
+            .completed_requests
+            .saturating_sub(self.last_sample_completed);
+        self.current_throughput = dc as f64 / dt;
+        self.last_sample_completed = self.completed_requests;
+
+        self.throughput_data
+            .push_back((elapsed, self.current_throughput));
+        if self.throughput_data.len() > CHART_HISTORY_LEN {
+            self.throughput_data.pop_front();
+        }
+
+        let avg_latency: f64 = if !self.recent_latencies.is_empty() {
+            self.recent_latencies.iter().sum::<f64>() / self.recent_latencies.len() as f64
+        } else {
+            0.0
+        };
+
+        self.latency_data.push_back((elapsed, avg_latency));
+        if self.latency_data.len() > CHART_HISTORY_LEN {
+            self.latency_data.pop_front();
+        }
+    }
+
+    /// Mark the test as complete (idempotent). Used when the runner finishes
+    /// draining work, not only when a metric arrives after the duration boundary.
+    pub fn mark_complete(&mut self) {
+        if self.is_complete {
+            return;
+        }
+        self.is_complete = true;
+        let end = Instant::now();
+        self.end_time = Some(end);
+
+        let elapsed = end.duration_since(self.start_time).as_secs_f64();
+
+        // Final percentile refresh so short runs are not left at zero
+        if self.completed_requests > 0 {
+            self.p50_latency = self.latency_histogram.value_at_quantile(0.5) as f64 / 1000.0;
+            self.p90_latency = self.latency_histogram.value_at_quantile(0.9) as f64 / 1000.0;
+            self.p95_latency = self.latency_histogram.value_at_quantile(0.95) as f64 / 1000.0;
+            self.p99_latency = self.latency_histogram.value_at_quantile(0.99) as f64 / 1000.0;
+        }
+
+        // Final sample so short runs get a visible chart point and non-zero "Current"
+        if self.completed_requests > 0 && elapsed > 0.0 {
+            let overall = self.completed_requests as f64 / elapsed;
+            self.current_throughput = overall;
+
+            // Prefer a clean final point at overall RPS over a stale interval sample
+            if let Some(last) = self.throughput_data.back_mut() {
+                if (elapsed - last.0) < CHART_SAMPLE_INTERVAL_SECS {
+                    *last = (elapsed, overall);
+                } else {
+                    self.throughput_data.push_back((elapsed, overall));
+                    if self.throughput_data.len() > CHART_HISTORY_LEN {
+                        self.throughput_data.pop_front();
+                    }
+                }
+            } else {
+                self.throughput_data.push_back((elapsed, overall));
             }
 
             let avg_latency: f64 = if !self.recent_latencies.is_empty() {
@@ -340,41 +447,20 @@ impl TestState {
             } else {
                 0.0
             };
-
-            self.latency_data.push_back((elapsed, avg_latency));
-            if self.latency_data.len() > 60 {
-                self.latency_data.pop_front();
-            }
-        }
-
-        // Add throughput data point
-        let second_bucket = elapsed.floor();
-        let last_entry = self.recent_throughput.back().cloned();
-
-        match last_entry {
-            Some((bucket, count)) if bucket == second_bucket => {
-                // Update existing bucket
-                self.recent_throughput.pop_back();
-                self.recent_throughput.push_back((bucket, count + 1.0));
-            }
-            _ => {
-                // Create new bucket
-                self.recent_throughput.push_back((second_bucket, 1.0));
-                if self.recent_throughput.len() > 30 {
-                    self.recent_throughput.pop_front();
+            if let Some(last) = self.latency_data.back_mut() {
+                if (elapsed - last.0) < CHART_SAMPLE_INTERVAL_SECS {
+                    *last = (elapsed, avg_latency);
+                } else {
+                    self.latency_data.push_back((elapsed, avg_latency));
+                    if self.latency_data.len() > CHART_HISTORY_LEN {
+                        self.latency_data.pop_front();
+                    }
                 }
+            } else {
+                self.latency_data.push_back((elapsed, avg_latency));
             }
-        }
 
-        // Check if test is complete
-        if (self.target_requests > 0 && self.completed_requests >= self.target_requests)
-            || (self.duration > 0 && elapsed >= self.duration as f64)
-        {
-            // Only mark as complete and store end time if not already complete
-            if !self.is_complete {
-                self.is_complete = true;
-                self.end_time = Some(Instant::now());
-            }
+            self.last_sample_completed = self.completed_requests;
         }
     }
 }

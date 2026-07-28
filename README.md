@@ -36,18 +36,19 @@ Built with the same terminal-focused philosophy that made hey popular, and desig
 - **Blazing fast** HTTP(S) endpoint testing
 - **Configurable concurrency** and request counts
 - **Rate limiting** for controlled load testing
-- **Multiple HTTP methods** (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+- **Multiple HTTP methods** (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT)
 - **Custom headers and authentication** support
 
 ### Interactive Dashboard
 - **Real-time metrics** with live updates
-- **Beautiful charts** for throughput and latency visualization
+- **Combined throughput + latency chart** on the dashboard (shared time axis, dual scales)
+- **Full charts tab** for separate throughput and latency views
 - **Status code breakdown** with color-coded responses
 - **Multiple view modes** (Dashboard, Charts, Status Codes)
 
 ### Developer Experience
-- **hey-compatible** command-line interface
-- **Flexible output formats** (interactive UI or text summary)
+- **hey-compatible** command-line flags where it matters
+- **Interactive terminal UI** (default)
 - **Comprehensive error handling** and timeout controls
 - **Proxy support** for complex network setups
 
@@ -67,7 +68,8 @@ brew install cloudy-native/whambam/whambam
 ```bash
 git clone https://github.com/cloudy-native/whambam.dev.git
 cd whambam.dev
-cargo build ...
+cargo build --release
+# binary at target/release/whambam
 ```
 
 ## 🚀 Quick Start
@@ -87,9 +89,6 @@ whambam https://api.example.com/users \
 
 # Time-limited test with rate limiting
 whambam https://example.com -z 30s -q 100 -c 10
-
-# hey-compatible text output
-whambam https://example.com -n 100 -c 10 --output hey
 ```
 
 ## 📖 Usage Reference
@@ -110,7 +109,7 @@ whambam <URL> [OPTIONS]
 ### HTTP Configuration
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-m, --method <METHOD>` | HTTP method | GET |
+| `-m, --method <METHOD>` | HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, …) | GET |
 | `-d, --body <BODY>` | Request body | - |
 | `-D, --body-file <FILE>` | Request body from file | - |
 | `-H, --header <HEADER>` | Custom headers (repeatable) | - |
@@ -129,27 +128,27 @@ whambam <URL> [OPTIONS]
 ### Output Options
 | Option | Description |
 |--------|-------------|
-| `-o, --output <FORMAT>` | Output format: `ui` (default) or `hey` (text) |
+| `--no-ui` | Reserved; interactive UI is required in the current release |
 
 ## 🎯 Interactive UI Guide
 
 ### Navigation
 - **`1`, `2`, `3`**: Switch between Dashboard, Charts, and Status Codes tabs
 - **`h` or `?`**: Toggle help overlay
+- **`r`**: Restart the test (after completion)
 - **`Ctrl-C`, `q`, or `ESC`**: Exit application
 
 ### Dashboard Tab
 Real-time performance metrics including:
-- **Throughput**: Requests per second
+- **Throughput**: Current and overall requests per second
 - **Success Rate**: Percentage of successful requests
-- **Response Times**: Min, max, and average latency
-- **Live Charts**: Visual representation of performance trends
+- **Response Times**: Min, max, and percentile latency (p50–p99)
+- **Combined chart**: Throughput (req/s, left) and latency (ms, right) on one shared timeline
 
 ### Charts Tab
 Full-screen visualization of:
 - **Throughput over time**
-- **Latency distribution**
-- **Request completion trends**
+- **Latency over time**
 
 ### Status Codes Tab
 Detailed breakdown of HTTP responses:
@@ -159,32 +158,35 @@ Detailed breakdown of HTTP responses:
 
 ## 🧪 Local Testing Setup
 
-Quickly test your installation with a local HTTP server:
+Quickly test your installation with a local HTTP server. Python’s built-in server works on macOS, Linux, and Windows without extra packages:
 
 ```bash
-# Install and start a simple HTTP server
-brew install http-server
-http-server .
+# Terminal 1 — serve the current directory on port 8080
+python3 -m http.server 8080
 
-# Test against local server
+# Terminal 2 — load-test it
 whambam http://localhost:8080 -n 100 -c 10
+
+# Or run for a fixed duration
+whambam http://localhost:8080 -z 10s -c 50
 ```
+
+`python3` ships with macOS (and most Linux distros). No Node/`http-server` install required.
 
 ## 🏗️ Architecture
 
 ```
 src/
-├── main.rs              # CLI parsing and application entry point
+├── main.rs                 # CLI parsing and application entry point
+├── lib.rs                  # Library entry (shared args / run)
 ├── tester/
-│   ├── runner.rs        # Async HTTP test execution engine
-│   └── types.rs         # Core data structures and shared state
+│   ├── unified_runner.rs   # Async worker pool + HTTP client
+│   ├── metrics.rs          # Lock-free metrics collection
+│   └── types.rs            # Config, request metrics, shared UI state
 ├── ui/
-│   ├── app.rs          # Terminal UI application logic
-│   └── widgets.rs      # UI components and layouts
-└── tests/              # Comprehensive test suite
-    ├── cli_tests.rs
-    ├── runner_tests.rs
-    └── mock_server.rs
+│   ├── app.rs              # Terminal UI application logic
+│   └── widgets.rs          # Dashboard, charts, status widgets
+└── tests/                  # Unit and integration tests
 ```
 
 ## 🤖 AI-Powered Development

@@ -20,6 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#![allow(deprecated)]
+
 use crate::tester::{HttpMethod, SharedState, TestConfig, UnifiedRunner as TestRunner};
 use crate::tests::MockServer;
 use std::{
@@ -27,6 +29,54 @@ use std::{
     time::Duration,
 };
 use tokio::time::sleep;
+
+#[tokio::test]
+async fn test_runner_sends_request_body() {
+    let server = MockServer::start().await;
+
+    let config = TestConfig {
+        url: server.url(),
+        method: HttpMethod::POST,
+        requests: 1,
+        concurrent: 1,
+        duration: 0,
+        rate_limit: 0.0,
+        headers: vec![("Content-Type".to_string(), "text/plain".to_string())],
+        timeout: 2,
+        body: Some("hello-body".to_string()),
+        content_type: "text/plain".to_string(),
+        basic_auth: None,
+        proxy: None,
+        disable_compression: false,
+        disable_keepalive: false,
+        disable_redirects: false,
+        interactive: false,
+        output_format: "hey".to_string(),
+    };
+
+    let state = Arc::new(Mutex::new(crate::tester::TestState::new(&config)));
+    let shared_state = SharedState {
+        state: Arc::clone(&state),
+    };
+    let mut runner = TestRunner::with_state(config, shared_state);
+
+    runner.start().await.expect("Runner failed to start");
+
+    let mut iterations = 0;
+    let max_iterations = 50;
+    while server.request_count() < 1 {
+        iterations += 1;
+        if iterations >= max_iterations {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let body = server
+        .get_last_body()
+        .expect("Expected mock server to capture a request body");
+    assert_eq!(String::from_utf8_lossy(&body), "hello-body");
+}
 
 #[tokio::test]
 async fn test_runner_basic_functionality() {
@@ -86,20 +136,13 @@ async fn test_runner_basic_functionality() {
 
     // Verify results
     let test_state = state.lock().unwrap();
-    // In test environment, we might not get exactly 10 requests
-    assert!(test_state.completed_requests > 0);
+    assert_eq!(test_state.completed_requests, 10);
     assert_eq!(test_state.error_count, 0);
     assert!(test_state.status_counts.contains_key(&200));
-    // Check that all completed requests had 200 status
-    assert_eq!(
-        test_state.status_counts[&200],
-        test_state.completed_requests
-    );
-    // Test may not mark itself as complete in time
-    // assert!(test_state.is_complete);
+    assert_eq!(test_state.status_counts[&200], 10);
+    assert!(test_state.is_complete);
 
-    // Verify server received some requests (but don't require an exact match)
-    assert!(server.request_count() > 0);
+    assert_eq!(server.request_count(), 10);
     let headers = server.get_received_headers();
     assert!(headers.contains_key("x-test"));
     assert_eq!(headers.get("x-test").unwrap()[0], "test-value");
@@ -166,19 +209,13 @@ async fn test_runner_with_errors() {
 
     // Verify results
     let test_state = state.lock().unwrap();
-    // In test environment, we might not get exactly 10 requests
-    assert!(test_state.completed_requests > 0);
-    assert_eq!(test_state.error_count, test_state.completed_requests); // All should be errors since status code is 500
+    assert_eq!(test_state.completed_requests, 10);
+    assert_eq!(test_state.error_count, 10); // All errors (status 500)
     assert!(test_state.status_counts.contains_key(&500));
-    assert_eq!(
-        test_state.status_counts[&500],
-        test_state.completed_requests
-    );
-    // Test may not mark itself as complete in time
-    // assert!(test_state.is_complete);
+    assert_eq!(test_state.status_counts[&500], 10);
+    assert!(test_state.is_complete);
 
-    // Verify server received some requests (but don't require an exact match)
-    assert!(server.request_count() > 0);
+    assert_eq!(server.request_count(), 10);
 }
 
 #[tokio::test]
@@ -220,10 +257,9 @@ async fn test_runner_duration_limit() {
     // Start the test
     runner.start().await.expect("Runner failed to start");
 
-    // Wait for duration plus a bit more to ensure test completes
-    // Use a longer wait time since duration completion might take longer
+    // Wait for duration plus drain to finish
     let mut iterations = 0;
-    let max_iterations = 30; // Wait up to 3 seconds
+    let max_iterations = 50; // Wait up to 5 seconds
 
     loop {
         {
@@ -243,11 +279,45 @@ async fn test_runner_duration_limit() {
 
     // Verify results
     let test_state = state.lock().unwrap();
-    // In tests we may not reliably complete within the time limit
-    // assert!(test_state.is_complete);
+    assert!(
+        test_state.is_complete,
+        "duration-limited run should mark is_complete after drain"
+    );
     assert!(test_state.completed_requests < 100); // Should not have completed all requests
     assert!(test_state.completed_requests > 0); // But should have completed some
 
-    // Verify server received some requests (but don't require an exact match)
     assert!(server.request_count() > 0);
+}
+
+#[tokio::test]
+async fn test_runner_rejects_zero_concurrency() {
+    let config = TestConfig {
+        url: "http://127.0.0.1:9/".to_string(),
+        method: HttpMethod::GET,
+        requests: 1,
+        concurrent: 0,
+        duration: 0,
+        rate_limit: 0.0,
+        headers: vec![],
+        timeout: 1,
+        body: None,
+        content_type: "text/html".to_string(),
+        basic_auth: None,
+        proxy: None,
+        disable_compression: false,
+        disable_keepalive: false,
+        disable_redirects: false,
+        interactive: false,
+        output_format: "hey".to_string(),
+    };
+
+    let mut runner = TestRunner::new(config);
+    let err = runner
+        .start()
+        .await
+        .expect_err("concurrent=0 should fail to start");
+    assert!(
+        err.to_string().contains("concurrent"),
+        "unexpected error: {err}"
+    );
 }

@@ -32,8 +32,11 @@ fn test_parse_http_method() {
     assert_eq!(parse_http_method("post").unwrap(), HttpMethod::POST);
     assert_eq!(parse_http_method("PUT").unwrap(), HttpMethod::PUT);
     assert_eq!(parse_http_method("DELETE").unwrap(), HttpMethod::DELETE);
+    assert_eq!(parse_http_method("PATCH").unwrap(), HttpMethod::PATCH);
     assert_eq!(parse_http_method("HEAD").unwrap(), HttpMethod::HEAD);
     assert_eq!(parse_http_method("OPTIONS").unwrap(), HttpMethod::OPTIONS);
+    assert_eq!(parse_http_method("TRACE").unwrap(), HttpMethod::TRACE);
+    assert_eq!(parse_http_method("CONNECT").unwrap(), HttpMethod::CONNECT);
 
     assert!(parse_http_method("INVALID").is_err());
 }

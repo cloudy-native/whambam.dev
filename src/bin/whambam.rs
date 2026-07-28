@@ -62,7 +62,7 @@ struct Args {
     headers: Vec<String>,
     
     /// Content-Type header
-    #[arg(short = 'T', long = "content-type", default_value = "")]
+    #[arg(short = 'T', long = "content-type", default_value = "text/html")]
     content_type: String,
     
     /// HTTP proxy as host:port
@@ -153,8 +153,11 @@ async fn main() -> Result<()> {
         "POST" => HttpMethod::POST,
         "PUT" => HttpMethod::PUT,
         "DELETE" => HttpMethod::DELETE,
+        "PATCH" => HttpMethod::PATCH,
         "HEAD" => HttpMethod::HEAD,
         "OPTIONS" => HttpMethod::OPTIONS,
+        "TRACE" => HttpMethod::TRACE,
+        "CONNECT" => HttpMethod::CONNECT,
         _ => return Err(anyhow!("Unsupported HTTP method: {}", args.method)),
     };
     
@@ -178,11 +181,9 @@ async fn main() -> Result<()> {
         (Some(content), _) => Some(content.clone()),
         (None, Some(file_path)) => {
             let path = Path::new(file_path);
-            if path.exists() {
-                Some(fs::read_to_string(path)?)
-            } else {
-                None
-            }
+            let content = fs::read_to_string(path)
+                .with_context(|| format!("Failed to read body file: {file_path}"))?;
+            Some(content)
         },
         _ => None,
     };

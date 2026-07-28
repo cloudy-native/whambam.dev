@@ -68,7 +68,7 @@ Will pummel `https://example.com` for 10 seconds with the default 50 concurrent 
 
 | Option                      | Description                                                                 | Default   | Examples & Explanation                                                                 |
 |-----------------------------|-----------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------|
-| `-m, --method <METHOD>`     | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `OPTIONS`)            | GET       | `-m POST` sends a POST request. Usually used with `-d` or `-D`.                         |
+| `-m, --method <METHOD>`     | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`, `TRACE`, `CONNECT`) | GET | `-m POST` sends a POST request. Usually used with `-d` or `-D`. |
 | `-d, --body <BODY>`         | Request body                                                                | -         | `-d '{"key":"value"}'` sends the given JSON string as the request body.              |
 | `-D, --body-file <FILE>`    | Request body from file                                                      | -         | `-D /path/to/body.json` sends the contents of the file as the request body.            |
 | `-H, --header <HEADER>`     | Custom headers (repeatable)                                                 | -         | `-H 'X-My-Header: 123' -H 'User-Agent: whambam'`                                       |
@@ -87,11 +87,26 @@ Will pummel `https://example.com` for 10 seconds with the default 50 concurrent 
 
 ## Output Options
 
-| Option                    | Description                                                                                             | Default |
-|---------------------------|---------------------------------------------------------------------------------------------------------|---------|
-| `-o, --output <FORMAT>`   | Output format: `ui` for a simple terminal UI or `hey` for mostly hey-compatible text output            | `ui`    |
+| Option        | Description                                                                 | Default |
+|---------------|-----------------------------------------------------------------------------|---------|
+| `--no-ui`     | Reserved for non-interactive mode; **not supported** in the current release | off     |
 
-Note: temporarily disabled in current version. `-o hey` is useful for scripting or logging, as it prints a simple text summary.
+The interactive terminal UI is always used today. Non-UI / hey-compatible text output may return in a later release.
+
+## Local testing
+
+You do not need Node’s `http-server` (which is awkward to install on modern macOS). Use Python’s built-in server instead—it is available on macOS, Linux, and Windows:
+
+```bash
+# Terminal 1 — serve the current directory on port 8080
+python3 -m http.server 8080
+
+# Terminal 2 — load-test it
+whambam http://localhost:8080 -n 100 -c 10
+
+# Or run for a fixed duration
+whambam http://localhost:8080 -z 10s -c 50
+```
 
 ## Interactive UI Guide
 
@@ -101,6 +116,7 @@ The interactive UI provides real-time feedback on your load test. Use these keys
 
 - `1`, `2`, `3`: Switch between Dashboard, Charts, and Status Codes tabs
 - `h` or `?`: Toggle help overlay
+- `r`: Restart the test after it completes
 - `Ctrl-C`, `q`, or `ESC`: Exit application
 
 ### Dashboard Tab
@@ -109,10 +125,10 @@ The interactive UI provides real-time feedback on your load test. Use these keys
 
 Real-time performance metrics including:
 
-- Throughput: Requests per second
+- Throughput: Current and overall requests per second
 - Success Rate: Percentage of successful requests
-- Response Times: Min, max, and average latency
-- Live Charts: Visual representation of performance trends
+- Response Times: Min, max, and percentile latency (p50–p99)
+- Combined chart: Throughput (req/s, left scale) and latency (ms, right scale) on one shared timeline, so spikes line up for correlation
 
 ### Charts Tab
 
@@ -120,9 +136,8 @@ Real-time performance metrics including:
 
 Full-screen visualization of:
 
-- Throughput over time
-- Latency distribution
-- Request completion trends
+- Throughput over time (with last / overall summary in the title)
+- Latency over time (with last / average summary in the title)
 
 ### Status Codes Tab
 

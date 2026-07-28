@@ -30,6 +30,7 @@ use tokio::time::sleep;
 struct ServerState {
     request_count: AtomicUsize,
     headers: Mutex<HashMap<String, Vec<String>>>,
+    last_body: Mutex<Option<Vec<u8>>>,
     status_code: AtomicUsize,
     delay_ms: AtomicUsize,
 }
@@ -39,6 +40,7 @@ impl ServerState {
         ServerState {
             request_count: AtomicUsize::new(0),
             headers: Mutex::new(HashMap::new()),
+            last_body: Mutex::new(None),
             status_code: AtomicUsize::new(200),
             delay_ms: AtomicUsize::new(0),
         }
@@ -97,6 +99,10 @@ impl MockServer {
     pub fn get_received_headers(&self) -> HashMap<String, Vec<String>> {
         self.state.headers.lock().unwrap().clone()
     }
+
+    pub fn get_last_body(&self) -> Option<Vec<u8>> {
+        self.state.last_body.lock().unwrap().clone()
+    }
 }
 
 impl Drop for MockServer {
@@ -145,6 +151,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
     }
 
     // Process headers - Do this inside a block to ensure the mutex is dropped before the await
+    let mut content_length: Option<usize> = None;
     {
         let mut header_map = state.headers.lock().unwrap();
 
@@ -159,9 +166,29 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
                 let name = name.trim().to_lowercase();
                 let value = value[1..].trim().to_string();
 
+                if name == "content-length" {
+                    content_length = value.parse::<usize>().ok();
+                }
+
                 header_map.entry(name).or_default().push(value);
             }
         }
+    }
+
+    // Read request body if present
+    if let Some(len) = content_length {
+        if len > 0 {
+            let mut body_buf = vec![0u8; len];
+            if stream.read_exact(&mut body_buf).await.is_ok() {
+                *state.last_body.lock().unwrap() = Some(body_buf);
+            } else {
+                *state.last_body.lock().unwrap() = None;
+            }
+        } else {
+            *state.last_body.lock().unwrap() = Some(Vec::new());
+        }
+    } else {
+        *state.last_body.lock().unwrap() = None;
     }
 
     // Increment request counter

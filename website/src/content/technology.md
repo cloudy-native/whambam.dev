@@ -185,16 +185,15 @@ Let's set up a test.
 
 ## Running a local web server
 
-We use `http-server` ([https://github.com/http-party/http-server](https://github.com/http-party/http-server)) to run a local web server. You had me at turtles strapped to rockets.
+We use Python’s built-in HTTP server—no Node/`http-server` install, and it works reliably on modern macOS:
 
 ```bash
-$ brew install http-server
-$ http-server -s .
+$ python3 -m http.server 8080
 ```
 
-This will start a local web server on port 8080 that serves files from your current directory.
+This serves files from your current directory on port 8080 (the same port used in the benchmarks below). Leave it running in one terminal and point the load tools at `http://localhost:8080` in another.
 
-By default, whambam displays a simple UI in the terminal.
+By default, whambam displays an interactive terminal UI (dashboard with a combined throughput/latency chart, plus Charts and Status Codes tabs).
 
 ![whambam UI screenshot](/images/ui-benchmark-comparison.png)
 
@@ -417,7 +416,7 @@ wrk -t 125 -d 10 -c 125 http://localhost:8080
 
 Runs a load test for 10 seconds with 125 concurrent connections. We allocate 125 threads to avoid any contention between threads and connections.
 
-Here are the results, again after letting `http-server` warm up:
+Here are the results, again after letting the local server warm up:
 
 ```text
 $ wrk -t 125 -d 10 -c 125 http://localhost:8080
@@ -468,6 +467,6 @@ brew install whambam
 whambam -z 10s -c 125 http://localhost:8080
 ```
 
-By default, whambam displays a simple UI in the terminal (see screenshot above). All the numbers look good and in range.
+By default, whambam displays an interactive terminal UI (see screenshot above). All the numbers look good and in range.
 
-Note: Output format `--output hey` is currently disabled in this version, but when available it prints a text summary similar to `hey`.
+Note: Non-UI / hey-compatible text output (`--no-ui` / former `--output hey`) is not available in the current release; the terminal UI is required.

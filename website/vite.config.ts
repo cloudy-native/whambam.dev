@@ -8,6 +8,8 @@ import remarkGfm from "remark-gfm";
 export default defineConfig({
   plugins: [
     mdx({
+      // Process both .mdx and .md files as MDX so they become React components
+      include: ["**/*.mdx", "**/*.md"],
       remarkPlugins: [remarkGfm],
     }),
     react(),
