@@ -1,0 +1,53 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { siteConfig } from "../config/site";
+---
+
+<Layout title={siteConfig.name} description={siteConfig.description}>
+  <section
+    class="flex flex-col items-center justify-center gap-4 py-8 md:py-10"
+  >
+    <div class="inline-block max-w-2xl text-center justify-center">
+      <h1
+        class="tracking-tight inline font-semibold text-[2.3rem] lg:text-5xl leading-9"
+      >
+        Run&nbsp;<span
+          class="bg-clip-text text-transparent bg-gradient-to-b from-[#FF1CF7] to-[#b249f8]"
+          >whambam&nbsp;</span
+        >
+        <br />
+        to test your website performance.
+      </h1>
+      <p class="mt-4 w-full text-lg lg:text-xl text-muted">
+        whambam is your new favourite web performance testing tool.
+      </p>
+      <p class="mt-4 w-full text-lg lg:text-xl text-muted">
+        Available for macOS (Intel and Apple Silicon) and Linux. Windows coming
+        soon.
+      </p>
+    </div>
+
+    <div class="mt-8 w-full max-w-xl">
+      <div
+        class="rounded-xl border border-border bg-card px-4 py-3 font-mono text-sm text-left shadow-sm"
+      >
+        <div class="text-muted">$ brew tap cloudy-native/whambam</div>
+        <div class="text-muted">$ brew install whambam</div>
+        <div class="text-foreground">
+          $ whambam -z 10s https://example.com
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 flex w-full max-w-4xl justify-center">
+      <img
+        src="/images/ui.png"
+        alt="whambam UI screenshot"
+        class="w-full rounded-lg shadow-md border border-border"
+        width="1200"
+        height="800"
+        loading="eager"
+      />
+    </div>
+  </section>
+</Layout>

@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-background: 255 255 255;
+  --color-foreground: 24 24 27;
+  --color-muted: 113 113 122;
+  --color-border: 228 228 231;
+  --color-card: 250 250 250;
+  --color-accent: 139 92 246;
+}
+
+html.dark {
+  --color-background: 9 9 11;
+  --color-foreground: 250 250 250;
+  --color-muted: 161 161 170;
+  --color-border: 39 39 42;
+  --color-card: 24 24 27;
+  --color-accent: 167 139 250;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-foreground antialiased min-h-screen;
+}
+
+/* Prose tweaks for markdown pages */
+.prose pre {
+  @apply border border-border rounded-lg;
+}
+
+.prose code::before,
+.prose code::after {
+  content: none;
+}

@@ -1,50 +1,34 @@
-# Vite & HeroUI Template
+# whambam.dev website
 
-This is a template for creating applications using Vite and HeroUI (v2).
+Static marketing and documentation site built with [Astro](https://astro.build) and Tailwind CSS.
 
-[Try it on CodeSandbox](https://githubbox.com/frontio-ai/vite-template)
+## Pages
 
-## Technologies Used
+| Route | Content |
+|-------|---------|
+| `/` | Landing / install snippet |
+| `/docs` | User docs (`src/content/docs.md`) |
+| `/technology` | Architecture & benchmarks (`src/content/technology.md`) |
 
-- [Vite](https://vitejs.dev/guide/)
-- [HeroUI](https://heroui.com)
-- [Tailwind CSS](https://tailwindcss.com)
-- [Tailwind Variants](https://tailwind-variants.org)
-- [TypeScript](https://www.typescriptlang.org)
-- [Framer Motion](https://www.framer.com/motion)
-
-## How to Use
-
-To clone the project, run the following command:
+## Development
 
 ```bash
-git clone https://github.com/frontio-ai/vite-template.git
+cd website
+pnpm install   # or npm install
+pnpm dev       # http://localhost:4321
 ```
 
-### Install dependencies
-
-You can use one of them `npm`, `yarn`, `pnpm`, `bun`, Example using `npm`:
+## Build
 
 ```bash
-npm install
+pnpm build     # output in dist/
+pnpm preview   # serve production build
 ```
 
-### Run the development server
+## Content
 
-```bash
-npm run dev
-```
+Edit Markdown under `src/content/`. GFM (tables, etc.) is enabled via `remark-gfm`.
 
-### Setup pnpm (optional)
+## Deploy
 
-If you are using `pnpm`, you need to add the following code to your `.npmrc` file:
-
-```bash
-public-hoist-pattern[]=*@heroui/*
-```
-
-After modifying the `.npmrc` file, you need to run `pnpm install` again to ensure that the dependencies are installed correctly.
-
-## License
-
-Licensed under the [MIT license](https://github.com/frontio-ai/vite-template/blob/main/LICENSE).
+`dist/` is a static site (suitable for Vercel, S3, etc.). The optional `cdk/` folder is unchanged for AWS hosting if used.
