@@ -4,6 +4,14 @@ node_modules/
 # build
 dist/
 .astro/
+cdk/cdk.out/
+cdk/.cdk.staging/
+
+# package managers other than pnpm
+package-lock.json
+yarn.lock
+bun.lockb
+npm-shrinkwrap.json
 
 # logs
 logs

@@ -1,0 +1,8 @@
+packages:
+  - "."
+  - "cdk"
+
+# Approve native postinstall scripts used by Astro / tooling
+allowBuilds:
+  esbuild: true
+  sharp: true

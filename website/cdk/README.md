@@ -1,14 +1,41 @@
-# Welcome to your CDK TypeScript project
+# Website CDK (TypeScript)
 
-This is a blank project for CDK development with TypeScript.
+AWS CDK app for hosting the static whambam.dev site.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+This package is part of the **website pnpm workspace** (`website/pnpm-workspace.yaml`).
+
+## Setup
+
+From the `website/` directory:
+
+```bash
+pnpm install
+```
+
+Or only this package:
+
+```bash
+cd website/cdk
+pnpm install
+```
 
 ## Useful commands
 
-* `npm run build`   compile typescript to js
-* `npm run watch`   watch for changes and compile
-* `npm run test`    perform the jest unit tests
-* `npx cdk deploy`  deploy this stack to your default AWS account/region
-* `npx cdk diff`    compare deployed stack with current state
-* `npx cdk synth`   emits the synthesized CloudFormation template
+| Command | Description |
+|---------|-------------|
+| `pnpm run build` | Compile TypeScript to JS |
+| `pnpm run watch` | Watch and recompile |
+| `pnpm run test` | Jest unit tests |
+| `pnpm exec cdk deploy` | Deploy to default AWS account/region |
+| `pnpm exec cdk diff` | Diff against deployed stack |
+| `pnpm exec cdk synth` | Emit CloudFormation template |
+
+From the website root you can also use:
+
+```bash
+pnpm cdk:build
+pnpm cdk:test
+pnpm cdk:synth
+pnpm cdk:diff
+pnpm cdk:deploy
+```
