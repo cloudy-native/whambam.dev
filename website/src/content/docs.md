@@ -58,11 +58,11 @@ Will pummel `https://example.com` for 10 seconds with the default 50 concurrent 
 
 | Option                     | Description                          | Default   | Examples & Explanation                                                                 |
 |----------------------------|--------------------------------------|-----------|-----------------------------------------------------------------------------------------|
-| `-n, --requests <N>`       | Number of requests to send           | 200       | `-n 1000` sends exactly 1000 requests. The test ends when all requests are complete. Cannot be used with `-z`. |
-| `-c, --concurrent <N>`     | Concurrent connections               | 50        | `-c 100` simulates 100 users making requests simultaneously.                            |
-| `-z, --duration <TIME>`    | Test duration (e.g., 30s, 5m, 1h)    | unlimited | `-z 1m` runs the test for exactly 1 minute. Cannot be used with `-n`.                  |
-| `-t, --timeout <SEC>`      | Request timeout in seconds           | 20        | `-t 5` aborts any request that takes longer than 5 seconds.                            |
-| `-q, --rate-limit <QPS>`   | Rate limit (queries per second)      | unlimited | `-q 100` attempts to send 100 requests per second. If `-c` is too low, the actual rate may be lower. |
+| `-n, --requests <N>`       | Number of requests to send           | 200       | `-n 1000` sends exactly 1000 requests. When `-z` is set, `-n` is ignored (a note is printed). |
+| `-c, --concurrent <N>`     | Concurrent connections               | 50        | `-c 100` uses 100 concurrent workers/connections.                            |
+| `-z, --duration <TIME>`    | Test duration (e.g., 30s, 5m, 1h)    | unlimited (`0`) | `-z 1m` runs about one minute. Takes precedence over `-n`.                  |
+| `-t, --timeout <SEC>`      | Request timeout in seconds           | 20        | `-t 5` aborts any request that takes longer than 5 seconds. Use `0` for no timeout. |
+| `-q, --rate-limit <QPS>`   | Rate limit **per worker** (QPS)      | unlimited (`0`) | `-q 100` aims for ~100 requests/sec **per concurrent worker**. Total ≈ `-q` × `-c`. |
 
 ## HTTP Configuration
 
@@ -87,11 +87,37 @@ Will pummel `https://example.com` for 10 seconds with the default 50 concurrent 
 
 ## Output Options
 
-| Option        | Description                                                                 | Default |
-|---------------|-----------------------------------------------------------------------------|---------|
-| `--no-ui`     | Reserved for non-interactive mode; **not supported** in the current release | off     |
+| Option    | Description                                                                 | Default |
+|-----------|-----------------------------------------------------------------------------|---------|
+| `--no-ui` | Disable the interactive UI and print a **hey-inspired, accuracy-first** text summary to stdout | off |
 
-The interactive terminal UI is always used today. Non-UI / hey-compatible text output may return in a later release.
+Progress while the test runs is written to **stderr**; the final Summary / histogram / latency distribution / status codes go to **stdout** so you can pipe or capture them cleanly.
+
+```bash
+whambam https://example.com -n 200 -c 50 --no-ui
+whambam https://example.com -z 10s -c 50 --no-ui > report.txt
+```
+
+### Text report accuracy (`--no-ui`)
+
+The report is **hey-inspired** for familiarity, but **accuracy is preferred over matching hey’s layout or numbers**.
+
+| Metric | How it is computed |
+|--------|--------------------|
+| Average | **True mean** of all latency samples (HDR histogram mean) |
+| Histogram | **Real sample counts** from the HDR histogram (linear buckets) |
+| Latency 10%…99% | HDR quantiles of those samples |
+| Fastest / Slowest | Observed min / max |
+| RPS, Total data, Size/request | Completed requests, wall time, byte counters |
+| Status codes | Observed codes |
+
+**Omitted on purpose:** hey’s “Details” block (DNS+dialup, DNS-lookup, req write, resp wait, resp read). whambam does not instrument those phases and will not invent placeholders.
+
+**Latency definition:** end-to-end — from request start through full response body download (not headers-only / TTFB).
+
+**Vs hey under the same flags:** RPS and total counts can still differ (HTTP stack, pooling, duration drain). Prefer whambam’s average, histogram, and percentiles when comparing distribution quality. Total time usually tracks `-z` closely; hey often runs slightly longer while draining.
+
+For live dual-axis charts, use the default UI (omit `--no-ui`).
 
 ## Local testing
 

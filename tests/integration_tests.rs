@@ -37,6 +37,8 @@ async fn test_no_ui_option_integration() {
 
     cmd.assert()
         .success()
-        .stdout(contains("The --no-ui option is currently not supported."))
-        .stdout(contains("The UI interface is required for this version."));
+        .stdout(contains("Summary:"))
+        .stdout(contains("Requests/sec:"))
+        .stdout(contains("Latency distribution:"))
+        .stdout(contains("Status code distribution:"));
 }

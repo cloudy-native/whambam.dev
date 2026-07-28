@@ -469,4 +469,4 @@ whambam -z 10s -c 125 http://localhost:8080
 
 By default, whambam displays an interactive terminal UI (see screenshot above). All the numbers look good and in range.
 
-Note: Non-UI / hey-compatible text output (`--no-ui` / former `--output hey`) is not available in the current release; the terminal UI is required.
+With `--no-ui`, whambam prints a hey-inspired text report. **Accuracy over layout:** true mean latency, real HDR histogram buckets, end-to-end timing (including body), and no fake DNS/phase breakdown. See Docs for the full table. For live dual-axis charts, use the default UI.

@@ -446,8 +446,8 @@ impl WorkerPool {
             request_builder = request_builder.body(body_content.clone());
         }
 
+        // End-to-end latency: headers + full body (accuracy over TTFB-only timing)
         let result = request_builder.send().await;
-        let duration = request_start.elapsed();
 
         match result {
             Ok(resp) => {
@@ -459,6 +459,7 @@ impl WorkerPool {
                     Ok(bytes) => bytes.len() as u64,
                     Err(_) => 0,
                 };
+                let duration = request_start.elapsed();
 
                 RequestMetric {
                     timestamp: start_time.elapsed().as_fractional_secs(),
@@ -469,14 +470,17 @@ impl WorkerPool {
                     bytes_received,
                 }
             }
-            Err(_) => RequestMetric {
-                timestamp: start_time.elapsed().as_fractional_secs(),
-                latency_ms: duration.as_fractional_millis(),
-                status_code: 0,
-                is_error: true,
-                bytes_sent,
-                bytes_received: 0,
-            },
+            Err(_) => {
+                let duration = request_start.elapsed();
+                RequestMetric {
+                    timestamp: start_time.elapsed().as_fractional_secs(),
+                    latency_ms: duration.as_fractional_millis(),
+                    status_code: 0,
+                    is_error: true,
+                    bytes_sent,
+                    bytes_received: 0,
+                }
+            }
         }
     }
 }

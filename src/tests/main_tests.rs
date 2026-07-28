@@ -18,7 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::{print_hey_format_report, tester::{HttpMethod, TestConfig, TestState}};
+#![allow(deprecated)]
+
+use crate::tester::{print_hey_format_report, HttpMethod, TestConfig, TestState};
 use std::time::{Duration, Instant};
 
 #[test]
@@ -44,19 +46,26 @@ fn test_print_hey_format_report_basic() {
     };
     let mut test_state = TestState::new(&config);
     test_state.is_complete = true;
-        test_state.start_time = Instant::now() - Duration::from_secs(10);
-        test_state.end_time = Some(Instant::now());
+    test_state.start_time = Instant::now() - Duration::from_secs(10);
+    test_state.end_time = Some(Instant::now());
     test_state.completed_requests = 100;
     test_state.total_bytes_received = 10240;
     test_state.min_latency = 10.0;
     test_state.max_latency = 100.0;
-    test_state.p50_latency = 50.0;
-    test_state.p90_latency = 80.0;
-    test_state.p95_latency = 90.0;
-    test_state.p99_latency = 99.0;
     test_state.status_counts.insert(200, 95);
     test_state.status_counts.insert(500, 5);
-    test_state.error_count = 2;
+    test_state.error_count = 5;
+
+    // Real samples in histogram (microseconds = ms * 1000)
+    for _ in 0..50 {
+        test_state.latency_histogram.record(10_000).unwrap(); // 10ms
+    }
+    for _ in 0..40 {
+        test_state.latency_histogram.record(50_000).unwrap(); // 50ms
+    }
+    for _ in 0..10 {
+        test_state.latency_histogram.record(100_000).unwrap(); // 100ms
+    }
 
     let mut buf = Vec::new();
     print_hey_format_report(&mut buf, &test_state).unwrap();
@@ -68,6 +77,20 @@ fn test_print_hey_format_report_basic() {
     assert!(output.contains("Requests/sec:"));
     assert!(output.contains("Latency distribution:"));
     assert!(output.contains("Status code distribution:"));
+    // True mean of samples, not percentile blend
+    assert!(output.contains("Average:\t"));
+    // No fabricated phase breakdown
+    assert!(
+        !output.contains("DNS+dialup:"),
+        "must not print unmeasured phase details"
+    );
+    assert!(
+        !output.contains("DNS-lookup:"),
+        "must not print unmeasured phase details"
+    );
+    // Real histogram has sample counts (not empty)
+    assert!(output.contains("Response time histogram:"));
+    assert!(output.contains("[200]\t95 responses"));
 }
 
 #[test]
@@ -104,6 +127,7 @@ fn test_print_hey_format_report_no_requests() {
 
     assert!(output.contains("Summary:"));
     assert!(output.contains("Requests/sec:"));
-    // Ensure it handles division by zero gracefully
     assert!(output.contains("Average:\t0.0000 secs"));
+    assert!(output.contains("(no samples)") || output.contains("Response time histogram:"));
+    assert!(!output.contains("DNS+dialup:"));
 }

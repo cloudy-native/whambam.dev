@@ -23,8 +23,10 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use url::Url;
 
 mod tester;
@@ -33,7 +35,10 @@ mod ui;
 #[cfg(test)]
 mod tests;
 
-use tester::{HttpMethod, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner};
+use tester::{
+    print_hey_format_report, HttpMethod, SharedState, TestConfig, TestState,
+    UnifiedRunner as TestRunner,
+};
 use ui::App;
 
 // Custom parser for HTTP methods
@@ -79,11 +84,11 @@ struct Args {
     #[arg(short = 't', long = "timeout", default_value = "20")]
     timeout: u64,
 
-    /// Rate limit in queries per second (QPS) per worker (0 for no limit)
+    /// Rate limit in queries per second (QPS) per worker (0 for no limit). Total QPS scales with concurrency.
     #[arg(short = 'q', long, default_value = "0")]
     rate_limit: f64,
 
-    /// HTTP method to use (GET, POST, PUT, DELETE, HEAD, OPTIONS)
+    /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT)
     #[arg(short = 'm', long = "method", default_value = "GET", value_parser = parse_http_method)]
     method: HttpMethod,
 
@@ -128,7 +133,7 @@ struct Args {
     #[arg(long = "disable-redirects")]
     disable_redirects: bool,
 
-    /// Interactive UI for real-time display of test results
+    /// Disable interactive UI; print an accurate hey-inspired text summary to stdout
     #[arg(long = "no-ui", default_value = "false")]
     no_ui: bool,
 }
@@ -295,38 +300,88 @@ async fn main() -> Result<()> {
         output_format: String::new(), // No longer used
     };
 
-    // Run in interactive mode unless --no-ui is specified
     if !args.no_ui {
-        // Create a shared state first
+        // Interactive UI mode
         let state = Arc::new(Mutex::new(TestState::new(&config)));
-
-        // Create the UI app using a direct reference to the shared state
         let shared_state = SharedState {
             state: Arc::clone(&state),
         };
         let mut app = App::new(shared_state);
 
-        // Start the test in a separate task, but only move the config
         let config_clone = config.clone();
         let state_clone = Arc::clone(&state);
         tokio::spawn(async move {
-            // Create a test runner inside the task with the shared state
             let mut runner =
                 TestRunner::with_state(config_clone, SharedState { state: state_clone });
             let _ = runner.start().await;
         });
 
-        // Run the UI and let it control the application lifecycle
         if let Err(e) = app.run() {
             eprintln!("UI error: {e:?}");
         }
-        // If we reach here, the UI has exited
     } else {
-        // Non-UI mode - just print a message and exit
-        println!("The --no-ui option is currently not supported.");
-        println!("The UI interface is required for this version.");
-        return Ok(());
+        // Headless hey-compatible mode (no TUI, no long-held locks)
+        run_headless(config).await?;
     }
+
+    Ok(())
+}
+
+/// Run the load test without a TUI and print a hey-style report to stdout.
+///
+/// Completion is observed via lock-free metrics (`AtomicBool`), not by holding
+/// the shared `TestState` mutex across the wait loop (that was the old locking
+/// issue that disabled this path).
+async fn run_headless(config: TestConfig) -> Result<()> {
+    let state = Arc::new(Mutex::new(TestState::new(&config)));
+    let mut runner = TestRunner::with_state(
+        config,
+        SharedState {
+            state: Arc::clone(&state),
+        },
+    );
+    let metrics = runner.metrics();
+
+    runner.start().await?;
+
+    // Wait for completion without locking TestState (lock-free AtomicBool).
+    // Also treat target request count as done so we never spin forever.
+    let target = {
+        let g = state
+            .lock()
+            .map_err(|_| anyhow!("shared test state lock poisoned"))?;
+        g.target_requests
+    };
+    let mut last_printed = 0usize;
+    loop {
+        if metrics.metrics.is_complete() {
+            break;
+        }
+        let n = metrics.metrics.completed_requests();
+        if target > 0 && n >= target {
+            // Metrics path may still be draining; give it a moment then finish
+            if n == last_printed {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                if metrics.metrics.is_complete() || metrics.metrics.completed_requests() >= target {
+                    break;
+                }
+            }
+        }
+        if n != last_printed {
+            // Progress on stderr so stdout stays clean for piping
+            eprint!("\rRequests completed: {n}   ");
+            let _ = io::stderr().flush();
+            last_printed = n;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    eprintln!();
+
+    // One short lock for the final snapshot only
+    let guard = state
+        .lock()
+        .map_err(|_| anyhow!("shared test state lock poisoned"))?;
+    print_hey_format_report(&mut io::stdout(), &guard)?;
 
     Ok(())
 }

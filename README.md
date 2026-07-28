@@ -89,6 +89,9 @@ whambam https://api.example.com/users \
 
 # Time-limited test with rate limiting
 whambam https://example.com -z 30s -q 100 -c 10
+
+# Text report to stdout (no TUI; good for scripts)
+whambam https://example.com -n 200 -c 50 --no-ui
 ```
 
 ## 📖 Usage Reference
@@ -102,9 +105,9 @@ whambam <URL> [OPTIONS]
 |--------|-------------|---------|
 | `-n, --requests <N>` | Number of requests to send | 200 |
 | `-c, --concurrent <N>` | Concurrent connections | 50 |
-| `-z, --duration <TIME>` | Test duration (e.g., 30s, 5m, 1h) | unlimited |
-| `-t, --timeout <SEC>` | Request timeout in seconds | 20 |
-| `-q, --rate-limit <QPS>` | Rate limit (queries per second) | unlimited |
+| `-z, --duration <TIME>` | Test duration (e.g., 30s, 5m, 1h); overrides `-n` | unlimited (`0`) |
+| `-t, --timeout <SEC>` | Request timeout in seconds (`0` = none) | 20 |
+| `-q, --rate-limit <QPS>` | Rate limit **per worker** (total ≈ QPS × concurrency) | unlimited (`0`) |
 
 ### HTTP Configuration
 | Option | Description | Default |
@@ -128,7 +131,38 @@ whambam <URL> [OPTIONS]
 ### Output Options
 | Option | Description |
 |--------|-------------|
-| `--no-ui` | Reserved; interactive UI is required in the current release |
+| `--no-ui` | Disable interactive UI; print **hey-inspired, accuracy-first** text summary to stdout |
+
+Progress while running goes to **stderr**; the final report goes to **stdout** (safe to redirect).
+
+```bash
+whambam http://localhost:8080 -z 10s -c 50 --no-ui
+whambam http://localhost:8080 -z 10s -c 50 --no-ui > report.txt
+```
+
+### Text report (`--no-ui`): accuracy over hey layout
+
+`--no-ui` prints a **hey-inspired** text summary, but **measurement accuracy wins over matching hey’s layout or numbers**.
+
+| Section | What whambam reports |
+|--------|----------------------|
+| **Total / RPS / Total data / Size/request** | From completed requests and wall time |
+| **Fastest / Slowest** | Observed min/max end-to-end latency |
+| **Average** | **True mean** of all samples (HDR histogram mean), not a percentile blend |
+| **Response time histogram** | **Real sample counts** from the HDR histogram (linear buckets) |
+| **Latency distribution (10%…99%)** | HDR quantiles of those same samples |
+| **Status codes** | Observed response codes |
+| **DNS / dial / req write / resp wait / resp read** | **Omitted** — we do not instrument those phases (hey prints them; we refuse placeholders) |
+
+**Latency definition:** each sample is **end-to-end** — request start through full response body download (not TTFB-only).
+
+Compared to hey under the same flags:
+
+- RPS and total request counts can differ (client stack, pooling, duration drain). Compare on equal footing with a warm server.
+- whambam’s **Total** usually tracks `-z` closely; hey often reports a slightly longer wall time while finishing in-flight work.
+- Prefer whambam’s **average**, **histogram**, and **percentiles** when the two tools disagree on distribution shape.
+
+For live dual-axis charts, use the default TUI (omit `--no-ui`).
 
 ## 🎯 Interactive UI Guide
 
@@ -205,6 +239,24 @@ This project was built in collaboration with [Claude Code](https://www.anthropic
 - **AWS Bedrock model used**: `us.anthropic.claude-3-7-sonnet-20250219-v1:0`
 - **Code split**: ~30% human-written structure, ~70% AI-generated implementation
 - **Test coverage**: Comprehensive suite with AI-generated tests
+
+## 📦 Releasing
+
+Releases are managed with [`cargo-release`](https://github.com/crate-ci/cargo-release):
+
+```bash
+cargo install cargo-release
+
+# Dry run first
+cargo release patch --dry-run
+
+# Cut a release (patch/minor/major)
+cargo release patch
+```
+
+This bumps the version, tags, and pushes. CI then cross-compiles for 6 targets, creates a GitHub Release with checksums, and updates the Homebrew tap automatically.
+
+See [Contributing Guidelines](CONTRIBUTING.md#releasing) for full details.
 
 ## 🤝 Contributing
 

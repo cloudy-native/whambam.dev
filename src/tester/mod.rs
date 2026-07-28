@@ -21,6 +21,7 @@
 // SOFTWARE.
 
 mod metrics;
+mod report;
 mod types;
 mod unified_runner;
 
@@ -29,5 +30,8 @@ pub use types::*;
 
 // Export the unified runner implementation
 pub use unified_runner::UnifiedRunner;
+
+// hey-compatible text report
+pub use report::print_hey_format_report;
 
 // Export metrics collector

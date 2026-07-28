@@ -74,6 +74,53 @@ For feature requests, please create a new issue using the feature request templa
 - Ensure all tests pass before submitting a pull request
 - For significant changes, consider adding integration tests
 
+## Releasing
+
+We use [`cargo-release`](https://github.com/crate-ci/cargo-release) to manage releases. The process is automated end-to-end: bump the version, tag, push, and CI handles cross-platform builds, GitHub Releases, and Homebrew formula updates.
+
+### Prerequisites
+
+```bash
+cargo install cargo-release
+```
+
+### Release Commands
+
+```bash
+# Dry run first (always recommended)
+cargo release patch --dry-run
+
+# Patch release: 0.2.1 → 0.2.2
+cargo release patch
+
+# Minor release: 0.2.1 → 0.3.0
+cargo release minor
+
+# Major release: 0.2.1 → 1.0.0
+cargo release major
+```
+
+### What Happens
+
+1. `cargo-release` bumps the version in `Cargo.toml`
+2. Commits with message "Release {version}"
+3. Creates a git tag `v{version}`
+4. Pushes the commit and tag to the remote
+5. The `v*` tag triggers the [Release workflow](.github/workflows/release.yml) which:
+   - Runs the test suite
+   - Cross-compiles for macOS (x86/ARM), Linux GNU (x86/ARM), and Linux musl (x86/ARM)
+   - Builds `.deb` packages for Linux GNU targets
+   - Creates a GitHub Release with tarballs and SHA256 checksums
+   - Updates the [Homebrew tap](https://github.com/cloudy-native/homebrew-whambam) formula
+
+### Configuration
+
+Release behavior is configured in `Cargo.toml` under `[package.metadata.release]`:
+
+- `publish = false` — skips crates.io (binary-only distribution)
+- `tag-name = "v{{version}}"` — tags as `v0.2.1`, `v0.3.0`, etc.
+- `pre-release-commit-message = "Release {{version}}"` — commit message format
+
 ## License
 
 By contributing to this project, you agree that your contributions will be licensed under the same license as the project.

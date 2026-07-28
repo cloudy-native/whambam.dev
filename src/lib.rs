@@ -28,8 +28,10 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use std::fs;
+use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use url::Url;
 
 pub mod args;
@@ -41,6 +43,9 @@ pub mod tests;
 
 use tester::{HttpMethod, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner};
 use ui::App;
+
+/// hey-compatible text report (also used by `--no-ui`).
+pub use tester::print_hey_format_report;
 
 /// Custom parser for HTTP methods.
 fn parse_http_method(s: &str) -> Result<HttpMethod> {
@@ -84,11 +89,11 @@ pub struct Args {
     #[arg(short = 't', long = "timeout", default_value = "20")]
     pub timeout: u64,
 
-    /// Rate limit in requests per second (QPS) per worker. 0 means no limit.
+    /// Rate limit in QPS per worker (0 = no limit). Total QPS scales with concurrency.
     #[arg(short = 'q', long, default_value = "0")]
     pub rate_limit: f64,
 
-    /// HTTP method.
+    /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT).
     #[arg(short = 'm', long = "method", default_value = "GET", value_parser = parse_http_method)]
     pub method: HttpMethod,
 
@@ -133,7 +138,7 @@ pub struct Args {
     #[arg(long = "disable-redirects")]
     pub disable_redirects: bool,
 
-    /// Disable interactive UI. When specified, the command will exit with an error.
+    /// Disable interactive UI; print an accurate hey-inspired text summary to stdout.
     #[arg(long = "no-ui", default_value = "false")]
     pub no_ui: bool,
 }
@@ -256,7 +261,6 @@ pub async fn run(args: Args) -> Result<()> {
         proxy: args.proxy.clone(),
     };
 
-    // Only interactive UI mode is supported
     if !args.no_ui {
         let state = Arc::new(Mutex::new(TestState::new(&config)));
         let shared_state = SharedState {
@@ -264,7 +268,6 @@ pub async fn run(args: Args) -> Result<()> {
         };
         let mut app = App::new(shared_state);
 
-        // Start load generation before the UI (mirrors main.rs)
         let config_clone = config.clone();
         let state_clone = Arc::clone(&state);
         tokio::spawn(async move {
@@ -275,10 +278,56 @@ pub async fn run(args: Args) -> Result<()> {
 
         app.run()?;
     } else {
-        println!("The --no-ui option is currently not supported.");
-        println!("The UI interface is required for this version.");
-        return Err(anyhow!("UI mode is required for this version"));
+        run_headless(config).await?;
     }
+
+    Ok(())
+}
+
+/// Headless mode: wait on lock-free metrics, then print a hey-style report.
+async fn run_headless(config: TestConfig) -> Result<()> {
+    let state = Arc::new(Mutex::new(TestState::new(&config)));
+    let mut runner = TestRunner::with_state(
+        config,
+        SharedState {
+            state: Arc::clone(&state),
+        },
+    );
+    let metrics = runner.metrics();
+
+    runner.start().await?;
+
+    let target = {
+        let g = state
+            .lock()
+            .map_err(|_| anyhow!("shared test state lock poisoned"))?;
+        g.target_requests
+    };
+    let mut last_printed = 0usize;
+    loop {
+        if metrics.metrics.is_complete() {
+            break;
+        }
+        let n = metrics.metrics.completed_requests();
+        if target > 0 && n >= target {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if metrics.metrics.is_complete() || metrics.metrics.completed_requests() >= target {
+                break;
+            }
+        }
+        if n != last_printed {
+            eprint!("\rRequests completed: {n}   ");
+            let _ = io::stderr().flush();
+            last_printed = n;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    eprintln!();
+
+    let guard = state
+        .lock()
+        .map_err(|_| anyhow!("shared test state lock poisoned"))?;
+    print_hey_format_report(&mut io::stdout(), &guard)?;
 
     Ok(())
 }
