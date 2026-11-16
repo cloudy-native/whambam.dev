@@ -1,46 +1,50 @@
 [package]
 name = "whambam"
 version = "1.0.0"
-edition = "2021"
-description = "A simple CLI web performance testing tool"
+edition = "2024"
+rust-version = "1.85"
+description = "Fast HTTP(S) load testing with a live terminal UI and hey-compatible flags"
 authors = ["Stephen Harrison <stephen@harrison.org>"]
 license = "MIT"
 homepage = "https://whambam.dev"
 repository = "https://github.com/cloudy-native/whambam.dev"
+documentation = "https://whambam.dev"
 default-run = "whambam"
 readme = "README.md"
-keywords = ["performance", "web", "testing", "cli", "benchmark"]
-categories = ["command-line-utilities"]
+keywords = ["load-testing", "http", "benchmark", "tui", "cli"]
+categories = ["command-line-utilities", "development-tools::profiling", "web-programming::http-client"]
+include = ["/src/**/*", "/schema/**/*", "/LICENSE", "/README.md", "/Cargo.toml", "/Cargo.lock"]
 
 [[bin]]
 name = "whambam"
 path = "src/main.rs"
 
-
-
-
 [dependencies]
-reqwest = { version = "0.11", features = ["blocking", "rustls-tls"], default-features = false }
-openssl = { version = "0.10", optional = true }
-
-tokio = { version = "1", features = ["full"] }
-clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"
+bytes = "1"
+clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }
+csv = "1.4"
 futures = "0.3"
-indicatif = "0.17"
-url = "2.4"
-ratatui = "0.22.0"
-crossterm = "0.27.0"
-chrono = "0.4"
-tui-logger = "0.9.6"
-log = "0.4"
-floating-duration = "0.1.2"
-hdrhistogram = "7.5.2"
-parking_lot = "0.12.1"
-crossbeam-queue = "0.3.8"
+hdrhistogram = "7.5"
+ratatui = "0.30"
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "gzip", "brotli", "deflate", "zstd", "socks"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+url = "2.5"
 
-[features]
-vendored-openssl = ["openssl/vendored"]
+[dev-dependencies]
+test-utils = { path = "test-utils" }
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [package.metadata.release]
 publish = false
@@ -50,8 +54,21 @@ pre-release-commit-message = "Release {{version}}"
 tag-message = "Release {{version}}"
 tag-name = "v{{version}}"
 
-[dev-dependencies]
-test-utils = { path = "test-utils" }
-assert_cmd = "2.0"
-predicates = "3.0"
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/whambam-v{ version }-{ target }{ archive-suffix }"
+bin-dir = "whambam{ binary-ext }"
+pkg-fmt = "tgz"
 
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.deb]
+maintainer = "Stephen Harrison <stephen@harrison.org>"
+section = "net"
+extended-description = "whambam is an HTTP(S) load generator with a live terminal dashboard, hey-compatible flags, JSON/CSV output and coordinated-omission-corrected rate limiting."
+
+[workspace]
+members = [".", "test-utils"]

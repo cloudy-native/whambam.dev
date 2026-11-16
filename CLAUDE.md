@@ -8,7 +8,14 @@ whambam is a super-low-latency web throughput testing framework. It is designed 
 
 ## Repository Structure
 
-This is a standard Rust project with a Cargo.toml file and a src directory.
+A Cargo workspace: the `whambam` crate (root) plus `test-utils` (mock HTTP/1.1 + h2c server for tests, `demo-server` binary for recordings).
+
+- `src/cli/` clap flags, `src/config/` validated `TestConfig`, `src/http/` clients/resolver/execution/error kinds, `src/engine/` workers and schedule, `src/stats/` live `TestState`, `src/report/` `Report` model (text/JSON/CSV), `src/ui/` ratatui views.
+- There is exactly one CLI definition (`src/cli`). The binary (`src/main.rs`) only calls `whambam::run`.
+- TLS is rustls with the `ring` provider (installed in `http::client`); do not enable reqwest's `rustls` (aws-lc) feature, it complicates Windows/musl builds.
+- `schema/report.schema.json` documents `-o json`; keep it in sync with `src/report/mod.rs` (a test checks required keys).
+- `demo/record.sh` re-records the README GIF and website screenshots with vhs.
+- CI (`.github/workflows/ci.yml`) runs on Linux x86_64 only. Releases build natively per target via `build.yml`; never trigger `release.yml` without the user asking. Manual runs default to `dry_run` (build and package only, publish nothing).
 
 Don't let code files get to be more than 300 lines long. Always refactor to keep files short and focused. If you find yourself writing a long function, consider breaking it down into smaller functions. Always factor similar code into reusable functions. Implement separation of concerns in code. Use the DRY and KISS achitectural principles. 
 
@@ -25,11 +32,11 @@ Always run `cargo fmt`, `cargo check` and `cargo clippy` after making updates to
 `cargo run`
 
 ### Testing
-`cargo test`
+`cargo test --workspace`
 
 ### Linting and Formatting
 `cargo fmt`
-`cargo clippy`
+`cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Important Notes
 
