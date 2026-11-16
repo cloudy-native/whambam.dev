@@ -8,6 +8,10 @@ name: Release
 #   HOMEBREW_TAP_ENABLED=true  + secret HOMEBREW_TAP_TOKEN
 #   CRATES_IO_ENABLED=true     + secret CARGO_REGISTRY_TOKEN
 #   WINGET_ENABLED=true        + secret WINGET_TOKEN (first version must be submitted by hand)
+#
+# Dry run: Actions → Release → Run workflow with "dry_run" ticked. It runs the
+# checks and every native build, renders the package manifests, and uploads
+# everything as workflow artifacts. Nothing is released or published.
 
 on:
   push:
@@ -15,9 +19,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.1.0)"
+        description: "Release tag (e.g. v1.1.0). For a dry run it only names the archives."
         required: true
+        default: v0.0.0-dry-run
         type: string
+      dry_run:
+        description: "Dry run: build and package only, publish nothing"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -105,9 +114,53 @@ jobs:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
       archive: zip
 
+  # ---- Dry run -----------------------------------------------------------
+  dry-run:
+    name: Dry run summary (nothing published)
+    if: inputs.dry_run
+    needs:
+      - linux-x86_64-gnu
+      - linux-aarch64-gnu
+      - linux-x86_64-musl
+      - linux-aarch64-musl
+      - macos-x86_64
+      - macos-aarch64
+      - windows-x86_64
+      - windows-aarch64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Render package manifests
+        run: packaging/render-manifests.sh "$RELEASE_TAG" dist manifests
+      - name: Verify checksums
+        working-directory: dist
+        run: sha256sum --check --strict *.sha256
+      - name: Summary
+        run: |
+          {
+            echo "## Dry run for \`$RELEASE_TAG\`: nothing was published"
+            echo
+            echo "| File | Size |"
+            echo "|---|---|"
+            for f in dist/* manifests/*; do
+              echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-manifests
+          path: manifests/*
+
   # ---- Publish -----------------------------------------------------------
   release:
     name: GitHub release
+    # Tag pushes have no inputs, so this runs for them; manual runs need dry_run off.
+    if: ${{ !inputs.dry_run }}
     needs:
       - linux-x86_64-gnu
       - linux-aarch64-gnu

@@ -126,6 +126,10 @@ cargo release major
 
 TLS uses rustls with the `ring` provider, so no target needs OpenSSL, NASM or CMake. Windows ARM64 needs clang for `ring`; the build installs LLVM if the runner lacks it.
 
+### Dry run
+
+Before tagging, check that every target still builds: **Actions → Release → Run workflow**, keep **dry_run** ticked, and run it. It runs the CI checks and all eight native builds, renders the Homebrew formula and Scoop manifest, verifies the checksums, and lists the files in the run summary. Archives and manifests are uploaded as workflow artifacts; nothing is released or published. Untick **dry_run** only to cut a real release from a manual run (normally, pushing a `v*` tag does that).
+
 ### Optional publishing
 
 These jobs are off until you set a repository variable to `true` (Settings → Secrets and variables → Actions):
