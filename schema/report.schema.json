@@ -4,60 +4,192 @@
   "title": "whambam report",
   "description": "Output of `whambam -o json`. All latencies are in milliseconds and are end to end (request start through the last body byte).",
   "type": "object",
-  "required": ["schema_version", "whambam_version", "target", "load", "summary", "latency_ms", "histogram", "status_codes", "errors"],
+  "required": [
+    "schema_version",
+    "whambam_version",
+    "target",
+    "load",
+    "summary",
+    "latency_ms",
+    "histogram",
+    "status_codes",
+    "errors",
+    "adjustments"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "whambam_version": { "type": "string" },
+    "schema_version": {
+      "const": 1
+    },
+    "whambam_version": {
+      "type": "string"
+    },
     "target": {
       "type": "object",
-      "required": ["url", "method", "http_version"],
+      "required": [
+        "url",
+        "method",
+        "http_version"
+      ],
       "properties": {
-        "url": { "type": "string" },
-        "method": { "type": "string" },
-        "http_version": { "enum": ["1.1", "2"] }
+        "url": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "http_version": {
+          "enum": [
+            "1.1",
+            "2"
+          ]
+        }
       }
     },
     "load": {
       "type": "object",
-      "required": ["concurrency", "workers", "requests", "duration_secs", "pacing", "rate", "latency_corrected"],
+      "required": [
+        "concurrency",
+        "workers",
+        "requests",
+        "duration_secs",
+        "pacing",
+        "rate",
+        "latency_corrected"
+      ],
       "properties": {
-        "concurrency": { "type": "integer", "minimum": 1 },
-        "workers": { "type": "integer", "minimum": 1, "description": "concurrency × HTTP/2 streams per connection" },
-        "requests": { "type": ["integer", "null"], "description": "Request budget; null when the run is time-limited or unlimited" },
-        "duration_secs": { "type": ["number", "null"] },
-        "pacing": { "enum": ["unlimited", "per_worker", "global"] },
-        "rate": { "type": ["number", "null"], "description": "Requests per second: per worker for per_worker, total for global" },
-        "latency_corrected": { "type": "boolean", "description": "True when latencies are measured from each request's due time (coordinated omission correction)" }
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "concurrency × HTTP/2 streams per connection"
+        },
+        "requests": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Request budget; null when the run is time-limited or unlimited"
+        },
+        "duration_secs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pacing": {
+          "enum": [
+            "unlimited",
+            "per_worker",
+            "global"
+          ]
+        },
+        "rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Requests per second: per worker for per_worker, total for global"
+        },
+        "latency_corrected": {
+          "type": "boolean",
+          "description": "True when latencies are measured from each request's due time (coordinated omission correction)"
+        }
       }
     },
     "summary": {
       "type": "object",
-      "required": ["total_secs", "requests", "successes", "failures", "success_rate", "rps", "bytes_received", "bytes_sent", "size_per_request", "interrupted"],
+      "required": [
+        "total_secs",
+        "requests",
+        "successes",
+        "failures",
+        "success_rate",
+        "rps",
+        "bytes_received",
+        "bytes_sent",
+        "size_per_request",
+        "interrupted"
+      ],
       "properties": {
-        "total_secs": { "type": "number" },
-        "requests": { "type": "integer", "description": "Completed requests, including failures" },
-        "successes": { "type": "integer", "description": "Responses with status below 400" },
-        "failures": { "type": "integer", "description": "4xx/5xx responses plus transport errors" },
-        "success_rate": { "type": "number", "minimum": 0, "maximum": 100 },
-        "rps": { "type": "number" },
-        "bytes_received": { "type": "integer", "description": "Response body bytes" },
-        "bytes_sent": { "type": "integer", "description": "Approximate request bytes" },
-        "size_per_request": { "type": "integer" },
-        "interrupted": { "type": "boolean" }
+        "total_secs": {
+          "type": "number"
+        },
+        "requests": {
+          "type": "integer",
+          "description": "Completed requests, including failures"
+        },
+        "successes": {
+          "type": "integer",
+          "description": "Responses with status below 400"
+        },
+        "failures": {
+          "type": "integer",
+          "description": "4xx/5xx responses plus transport errors"
+        },
+        "success_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rps": {
+          "type": "number"
+        },
+        "bytes_received": {
+          "type": "integer",
+          "description": "Response body bytes"
+        },
+        "bytes_sent": {
+          "type": "integer",
+          "description": "Approximate request bytes"
+        },
+        "size_per_request": {
+          "type": "integer"
+        },
+        "interrupted": {
+          "type": "boolean"
+        }
       }
     },
     "latency_ms": {
       "type": "object",
-      "required": ["min", "max", "mean", "stdev", "percentiles"],
+      "required": [
+        "min",
+        "max",
+        "mean",
+        "stdev",
+        "percentiles"
+      ],
       "properties": {
-        "min": { "type": "number" },
-        "max": { "type": "number" },
-        "mean": { "type": "number" },
-        "stdev": { "type": "number" },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "stdev": {
+          "type": "number"
+        },
         "percentiles": {
           "type": "object",
-          "required": ["p10", "p25", "p50", "p75", "p90", "p95", "p99", "p99.9"],
-          "additionalProperties": { "type": "number" }
+          "required": [
+            "p10",
+            "p25",
+            "p50",
+            "p75",
+            "p90",
+            "p95",
+            "p99",
+            "p99.9"
+          ],
+          "additionalProperties": {
+            "type": "number"
+          }
         }
       }
     },
@@ -65,24 +197,170 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["le_ms", "count"],
+        "required": [
+          "le_ms",
+          "count"
+        ],
         "properties": {
-          "le_ms": { "type": "number", "description": "Upper edge of the bucket" },
-          "count": { "type": "integer" }
+          "le_ms": {
+            "type": "number",
+            "description": "Upper edge of the bucket"
+          },
+          "count": {
+            "type": "integer"
+          }
         }
       }
     },
     "status_codes": {
       "type": "object",
-      "propertyNames": { "pattern": "^[1-5][0-9]{2}$" },
-      "additionalProperties": { "type": "integer" }
+      "propertyNames": {
+        "pattern": "^[1-5][0-9]{2}$"
+      },
+      "additionalProperties": {
+        "type": "integer"
+      }
     },
     "errors": {
       "type": "object",
       "propertyNames": {
-        "enum": ["timeout", "dns", "connection_refused", "connection_closed", "tls", "connect", "redirect", "body", "request", "other"]
+        "enum": [
+          "timeout",
+          "dns",
+          "connection_refused",
+          "connection_closed",
+          "tls",
+          "connect",
+          "redirect",
+          "body",
+          "request",
+          "other"
+        ]
       },
-      "additionalProperties": { "type": "integer" }
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "adjustments": {
+      "type": "array",
+      "description": "Live changes made from the UI (+/- workers, [/] rate), in order",
+      "items": {
+        "type": "object",
+        "required": [
+          "t",
+          "workers",
+          "rate"
+        ],
+        "properties": {
+          "t": {
+            "type": "number",
+            "description": "Seconds since the test started"
+          },
+          "workers": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Requests per second after the change (same meaning as load.rate)"
+          }
+        }
+      }
+    },
+    "comparison": {
+      "type": "array",
+      "description": "Present with --baseline: standard metrics compared with the baseline report",
+      "items": {
+        "type": "object",
+        "required": [
+          "metric",
+          "baseline",
+          "current",
+          "change_pct",
+          "improved"
+        ],
+        "properties": {
+          "metric": {
+            "enum": [
+              "rps",
+              "success",
+              "errors",
+              "min",
+              "mean",
+              "max",
+              "p50",
+              "p90",
+              "p95",
+              "p99",
+              "p99.9"
+            ]
+          },
+          "baseline": {
+            "type": "number"
+          },
+          "current": {
+            "type": "number"
+          },
+          "change_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Percent change; null when the baseline value is 0"
+          },
+          "improved": {
+            "type": "boolean",
+            "description": "True when the change is in the better direction or zero"
+          }
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "description": "Present with --assert: one result per check; any failure makes whambam exit with status 1",
+      "items": {
+        "type": "object",
+        "required": [
+          "assertion",
+          "metric",
+          "actual",
+          "threshold",
+          "passed"
+        ],
+        "properties": {
+          "assertion": {
+            "type": "string"
+          },
+          "metric": {
+            "enum": [
+              "rps",
+              "success",
+              "errors",
+              "min",
+              "mean",
+              "max",
+              "p50",
+              "p90",
+              "p95",
+              "p99",
+              "p99.9"
+            ]
+          },
+          "actual": {
+            "type": "number"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Resolved limit (relative checks are converted using the baseline)"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        }
+      }
     }
   }
 }

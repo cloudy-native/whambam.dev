@@ -9,8 +9,6 @@ use anyhow::{Context, Result};
 
 use super::{Report, write_text};
 use crate::cli::OutputFormat;
-use crate::config::TestConfig;
-use crate::stats::TestState;
 
 /// Open `path` for writing, or stdout when `None`.
 pub fn open_output(path: Option<&Path>) -> Result<Box<dyn Write + Send>> {
@@ -25,21 +23,15 @@ pub fn open_output(path: Option<&Path>) -> Result<Box<dyn Write + Send>> {
 }
 
 /// Text and JSON summaries. CSV is streamed by [`super::CsvSink`] instead.
-pub fn write_report(
-    format: OutputFormat,
-    state: &TestState,
-    config: &TestConfig,
-    path: Option<&Path>,
-) -> Result<()> {
+pub fn write_report(format: OutputFormat, report: &Report, path: Option<&Path>) -> Result<()> {
     if matches!(format, OutputFormat::Csv | OutputFormat::Quiet) {
         return Ok(());
     }
-    let report = Report::new(state, config);
     let mut out = open_output(path)?;
     match format {
-        OutputFormat::Text => write_text(&mut out, &report)?,
+        OutputFormat::Text => write_text(&mut out, report)?,
         _ => {
-            serde_json::to_writer_pretty(&mut out, &report)?;
+            serde_json::to_writer_pretty(&mut out, report)?;
             writeln!(out)?;
         }
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! whambam: HTTP(S) load testing with a live terminal UI.
 
+pub mod checks;
 pub mod cli;
 pub mod config;
 pub mod engine;
@@ -16,14 +17,19 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use tokio_util::sync::CancellationToken;
 
-use cli::{Cli, OutputFormat};
+use checks::Checks;
+use cli::{Cli, Command, OutputFormat};
 use config::TestConfig;
-use report::{CsvSink, write_report};
+use report::{CsvSink, Report, write_report};
 use stats::SharedState;
 
 /// Run whambam with parsed command-line arguments.
 pub async fn run(cli: Cli) -> Result<()> {
+    if let Some(Command::Compare(args)) = &cli.command {
+        return checks::run_compare_stdout(args);
+    }
     let config = Arc::new(TestConfig::from_cli(&cli)?);
+    let checks = Checks::load(&cli.check)?;
     let out = &cli.output;
     if out.debug {
         let mut buf = Vec::new();
@@ -45,6 +51,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         let options = ui::UiOptions {
             color: !out.no_color,
             fps: out.fps,
+            baseline: checks.baseline.clone(),
         };
         ui::run(Arc::clone(&config), state.clone(), sink, options)?
     } else {
@@ -53,12 +60,10 @@ pub async fn run(cli: Cli) -> Result<()> {
     if let Some(sink) = sink {
         sink.finish()?;
     }
-    write_report(
-        out.output_format,
-        &state.snapshot(),
-        &config,
-        out.output_file.as_deref(),
-    )
+    let mut report = Report::new(&state.snapshot(), &config);
+    checks.apply(&mut report)?;
+    write_report(out.output_format, &report, out.output_file.as_deref())?;
+    checks::verdict(report.assertions.as_deref())
 }
 
 /// Run without the UI, showing progress on stderr. Ctrl-C stops the run and
@@ -78,7 +83,8 @@ async fn run_headless(
     let progress = io::stderr()
         .is_terminal()
         .then(|| spawn_progress(state.clone()));
-    let result = engine::run(config, state, stop, sink).await;
+    let control = engine::Control::new(engine::Settings::from_config(&config));
+    let result = engine::run(config, state, stop, sink, control).await;
     if let Some(p) = progress {
         p.abort();
         eprint!("\r\x1b[2K");

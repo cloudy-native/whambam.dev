@@ -9,6 +9,8 @@ Phases 0 and 1 are implemented on branch `feature/terminal-trove-parity`:
 - **Phase 0:** one CLI (`src/cli`), modules split under 300 lines, ratatui 0.30 + reqwest 0.13, one `Report` model for every output.
 - **Phase 1:** demo GIF/PNG (`demo/record.sh`), Windows x86_64 + ARM64 builds, crates.io/binstall metadata, Scoop manifest, Linux in the Homebrew formula, `-o text|json|csv|quiet` + `--output` + JSON schema, `--qps` with coordinated-omission correction, errors by kind, TLS/network flags (`-k`, `--cacert`, `--cert/--key`, `--connect-timeout`, `--connect-to`, `--host`, `-4/-6`), `--debug`, `--http2` + `-p`, `-r`, `10k` suffixes, `NO_COLOR`, `--fps`, README rewrite.
 
+Standout features **A (live load controls)** and **C (baselines, `whambam compare`, `--assert`, GitHub Action)** are implemented on branch `feature/live-controls-baselines`. The draft copy in §5 now matches what exists.
+
 Still manual: first release run on the new native runners, enabling the Homebrew/crates.io/winget jobs (repository variables + secrets), first winget submission, homebrew-core submission, and the Terminal Trove form itself.
 
 ## 1. The competitive field

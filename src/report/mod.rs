@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 //! The report model. Every output (text, JSON, TUI summary) renders from it.
 
+mod assert;
+mod baseline;
 mod csv;
+mod metric;
 mod output;
 mod text;
 
@@ -9,14 +12,17 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+pub use assert::{AssertResult, Assertion, check_all};
+pub use baseline::{Baseline, ComparisonRow, compare};
 pub use csv::CsvSink;
-pub use output::write_report;
-pub use text::write_text;
+pub use metric::{Metric, Metrics};
+pub use output::{open_output, write_report};
+pub use text::{write_assertions, write_comparison, write_text};
 
 use crate::cli::HttpVersion;
 use crate::config::{Pacing, TestConfig};
 use crate::http::ErrorKind;
-use crate::stats::TestState;
+use crate::stats::{Adjustment, TestState};
 
 /// Bump when the JSON shape changes incompatibly.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -46,6 +52,14 @@ pub struct Report {
     pub histogram: Vec<Bucket>,
     pub status_codes: BTreeMap<u16, usize>,
     pub errors: BTreeMap<ErrorKind, usize>,
+    /// Live changes made from the UI during the run.
+    pub adjustments: Vec<Adjustment>,
+    /// Present when run with --baseline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<Vec<ComparisonRow>>,
+    /// Present when run with --assert.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assertions: Option<Vec<AssertResult>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +165,27 @@ impl Report {
             histogram: histogram(state),
             status_codes: state.status_counts.clone(),
             errors: state.error_counts.clone(),
+            adjustments: state.adjustments.clone(),
+            comparison: None,
+            assertions: None,
+        }
+    }
+}
+
+impl Metrics for Report {
+    fn metric(&self, m: Metric) -> f64 {
+        let l = &self.latency_ms;
+        match m {
+            Metric::Rps => self.summary.rps,
+            Metric::SuccessRate => self.summary.success_rate,
+            Metric::ErrorRate => 100.0 - self.summary.success_rate,
+            Metric::Min => l.min,
+            Metric::Mean => l.mean,
+            Metric::Max => l.max,
+            p => p
+                .percentile_key()
+                .and_then(|k| l.percentiles.get(k).copied())
+                .unwrap_or(0.0),
         }
     }
 }

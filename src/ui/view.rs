@@ -11,6 +11,8 @@ use super::theme::Theme;
 use super::{charts, dashboard, responses};
 use crate::cli::HttpVersion;
 use crate::config::{Pacing, TestConfig};
+use crate::engine::Settings;
+use crate::report::Baseline;
 use crate::stats::TestState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +54,9 @@ impl Tab {
 
 pub struct ViewCtx<'a> {
     pub config: &'a TestConfig,
+    /// Live workers and rate, which may differ from the config.
+    pub settings: Settings,
+    pub baseline: Option<&'a Baseline>,
     pub theme: Theme,
     pub tab: Tab,
     pub help: bool,
@@ -76,14 +81,14 @@ pub fn draw(f: &mut Frame, state: &TestState, ctx: &ViewCtx) {
         tabs,
     );
     match ctx.tab {
-        Tab::Dashboard => dashboard::draw(f, body, state, &ctx.theme),
-        Tab::Charts => charts::draw_split(f, body, state, &ctx.theme),
+        Tab::Dashboard => dashboard::draw(f, body, state, &ctx.theme, ctx.baseline),
+        Tab::Charts => charts::draw_split(f, body, state, &ctx.theme, ctx.baseline),
         Tab::Responses => responses::draw(f, body, state, &ctx.theme),
     }
-    let keys = if state.is_complete() {
-        " r restart · ←/→ or 1-3 tabs · h help · q quit"
-    } else {
-        " ←/→ or 1-3 tabs · h help · q quit"
+    let keys = match (state.is_complete(), ctx.settings.rate.is_some()) {
+        (true, _) => " r restart · ←/→ or 1-3 tabs · h help · q quit",
+        (false, true) => " +/- workers · [/] rate · ←/→ tabs · h help · q quit",
+        (false, false) => " +/- workers · ←/→ tabs · h help · q quit",
     };
     f.render_widget(Paragraph::new(keys).style(ctx.theme.muted()), footer);
     if ctx.help {
@@ -110,7 +115,7 @@ fn draw_header(f: &mut Frame, area: Rect, state: &TestState, ctx: &ViewCtx) {
     if let Some(p) = progress(state, ctx.config) {
         first.push(Span::styled(format!("  {:.0}%", p * 100.0), t.highlight()));
     }
-    let second = Line::styled(describe_load(ctx.config), t.muted());
+    let second = Line::styled(describe_load(ctx.config, ctx.settings), t.muted());
     let block = Block::bordered().title(" whambam ").border_style(t.muted());
     f.render_widget(
         Paragraph::new(vec![Line::from(first), second]).block(block),
@@ -131,34 +136,43 @@ fn progress(state: &TestState, config: &TestConfig) -> Option<f64> {
     Some(p.clamp(0.0, 1.0))
 }
 
-pub fn describe_load(c: &TestConfig) -> String {
+pub fn describe_load(c: &TestConfig, live: Settings) -> String {
     let version = match c.net.http_version {
         HttpVersion::Http11 => "HTTP/1.1".to_string(),
         HttpVersion::Http2 => format!("HTTP/2 ×{} streams", c.http2_parallel),
     };
-    let pacing = match c.pacing {
-        Pacing::Unlimited => "unthrottled".to_string(),
-        Pacing::PerWorker(q) => format!("{q} req/s per worker"),
-        Pacing::Global(q) => format!("{q} req/s total, latency corrected"),
+    let rate = live.rate.map(|r| {
+        if r >= 10.0 {
+            format!("{r:.0}")
+        } else {
+            format!("{r:.1}")
+        }
+    });
+    let pacing = match (c.pacing, rate) {
+        (Pacing::PerWorker(_), Some(q)) => format!("{q} req/s per worker"),
+        (Pacing::Global(_), Some(q)) => format!("{q} req/s total, latency corrected"),
+        _ => "unthrottled".to_string(),
     };
     let limit = match (c.requests, c.duration) {
         (_, Some(d)) => format!("for {:.0?}", d),
         (Some(n), None) => format!("{n} requests"),
         (None, None) => "until stopped".to_string(),
     };
-    format!("{} workers · {version} · {pacing} · {limit}", c.concurrency)
+    format!("{} workers · {version} · {pacing} · {limit}", live.workers)
 }
 
 fn draw_help(f: &mut Frame, area: Rect, t: &Theme) {
     let lines = [
         "q / Esc / Ctrl-C   quit and print the report",
         "r                  restart a finished test",
+        "+ / - (↑ / ↓)      more or fewer workers (10% steps)",
+        "] / [              raise or lower the rate (-q / --qps)",
         "1 2 3 / ← →        switch tabs",
         "h / ?              toggle this help",
     ];
     let [_, mid, _] = Layout::vertical([
         Constraint::Fill(1),
-        Constraint::Length(6),
+        Constraint::Length(8),
         Constraint::Fill(1),
     ])
     .areas(area);

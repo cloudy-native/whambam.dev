@@ -148,6 +148,62 @@ The report is **hey-inspired** for familiarity, but **accuracy is preferred over
 whambam https://httpbin.org/post -m POST -d '{"a":1}' -T application/json --debug
 ```
 
+## Live load controls
+
+You don't have to restart a test to try a different load. While it runs:
+
+| Key | Effect |
+|---|---|
+| `+` / `-` (or `↑` / `↓`) | 10% more or fewer workers |
+| `]` / `[` | 10% higher or lower rate (`--qps` total, or `-q` per worker) |
+
+Start low and raise the load until latency turns: that point is your service's knee. Every change is drawn as a marker on the charts and listed in the report (`Load changes:` in text, `adjustments` in JSON). With `--qps`, a new rate applies straight away; requests that were queued under the old rate are re-timed.
+
+## Baselines and checks
+
+Save a run as JSON, then compare later runs with it:
+
+```bash
+whambam https://staging.example.com -z 30s --qps 200 --no-ui -o json --output baseline.json
+whambam https://staging.example.com -z 30s --qps 200 --baseline baseline.json
+```
+
+With `--baseline`, the dashboard shows each number's change from the baseline (red when worse), the Charts tab draws the baseline throughput and mean latency as reference lines, and the report ends with a comparison table.
+
+`--assert` turns a run into a pass/fail check: whambam exits with status 1 if any check fails, which fails a CI job.
+
+```bash
+whambam https://staging.example.com -z 30s --assert 'p99<250ms,errors<1%'
+whambam https://staging.example.com -z 30s --baseline baseline.json --assert 'p99<+10%,rps>-5%'
+```
+
+| Metric | Values | Examples |
+|---|---|---|
+| `p50` `p90` `p95` `p99` `p99.9` `mean` `min` `max` | latency: `200ms`, `1.5s` (bare numbers are ms) | `p99<200ms`, `max<=2s` |
+| `rps` | requests per second | `rps>=1000` |
+| `success`, `errors` | percent of requests | `errors<0.5%`, `success>=99.9` |
+| any | change from the baseline: `+N%` or `-N%` | `p99<+10%`, `rps>-5%` |
+
+To compare two saved reports without running anything:
+
+```bash
+whambam compare baseline.json today.json --assert 'p99<+10%'
+```
+
+## GitHub Action
+
+The repository is also a GitHub Action. It installs the right whambam binary for the runner, runs the test, writes a JSON report, adds a summary table to the job page, and fails the job when a check fails:
+
+```yaml
+- uses: cloudy-native/whambam.dev@v1
+  with:
+    url: https://staging.example.com/health
+    args: -z 30s -c 20 --qps 200
+    assert: p99<250ms,errors<1%
+    baseline: baseline.json   # optional: compare with a saved report
+    report: whambam-report.json
+```
+
 ## Local testing
 
 You do not need Node’s `http-server`. Python’s built-in server works on macOS, Linux and Windows:
@@ -168,6 +224,8 @@ The interactive UI gives real-time feedback on your load test. Use these keys to
 
 - `1`, `2`, `3`, `←`/`→` or `Tab`: switch between Dashboard, Charts, and Status & errors
 - `h` or `?`: toggle help
+- `+`/`-` or `↑`/`↓`: more or fewer workers while the test runs
+- `]`/`[`: higher or lower rate while the test runs (with `--qps` or `-q`)
 - `r`: run the same test again after it completes
 - `q`, `Esc` or `Ctrl-C`: quit and print the report
 

@@ -70,7 +70,11 @@ impl TestConfig {
         if load.http2_parallel > 1 && net.http_version != HttpVersion::Http2 {
             bail!("-p requires --http2");
         }
-        let request = RequestSpec::from_cli(&cli.url, &cli.request, &net)?;
+        let url = cli
+            .url
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("a URL is required"))?;
+        let request = RequestSpec::from_cli(url, &cli.request, &net)?;
         let duration = load.duration.filter(|d| !d.is_zero());
         let requests = match (duration, load.requests) {
             (Some(_), _) | (None, 0) => None,

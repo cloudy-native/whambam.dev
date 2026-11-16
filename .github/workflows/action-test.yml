@@ -1,0 +1,57 @@
+name: Action self-test
+
+# Exercises action.yml (install + run + --assert + job summary) against a real
+# release on each runner OS. Runs when a release is published, or by hand.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to install (e.g. v1.2.0) or latest"
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  action:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start a local server
+        shell: bash
+        run: |
+          python3 -m http.server 8765 > /dev/null 2>&1 &
+          sleep 2
+
+      - name: Baseline run
+        uses: ./
+        with:
+          url: http://127.0.0.1:8765/
+          args: -n 200 -c 10
+          assert: errors<1%
+          report: baseline.json
+          version: ${{ github.event.release.tag_name || inputs.version || 'latest' }}
+
+      - name: Compared run
+        uses: ./
+        with:
+          url: http://127.0.0.1:8765/
+          args: -n 200 -c 10
+          baseline: baseline.json
+          assert: errors<1%,p99<5s
+          report: current.json
+          version: ${{ github.event.release.tag_name || inputs.version || 'latest' }}
+
+      - name: Check the report
+        shell: bash
+        run: |
+          jq -e '.summary.requests == 200 and (.assertions | all(.passed)) and (.comparison | length == 8)' current.json

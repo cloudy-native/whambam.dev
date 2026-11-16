@@ -17,6 +17,8 @@ Fast HTTP(S) load testing with a live terminal UI and hey-compatible flags.
 - **hey-compatible flags** for the common cases (`-n -c -z -q -m -H -d -D -A -T -a -x -o csv`), so scripts keep working.
 - **A live dashboard**: throughput and latency on one timeline, percentiles, status codes and errors as they happen.
 - **Honest numbers**: HDR-histogram percentiles, end-to-end latency (through the last body byte), and `--qps` runs corrected for coordinated omission.
+- **Steer the load live**: change workers and request rate from the keyboard while the test runs, and find the knee in one session.
+- **Catch regressions**: compare with a saved baseline, and fail CI with checks like `--assert "p99<200ms,errors<1%"` or `--assert "p99<+10%"`.
 - **Machine-readable output**: JSON summaries with a [published schema](schema/report.schema.json), and per-request CSV.
 - **One static binary** for macOS, Linux and Windows on x86_64 and ARM64. Written in Rust.
 
@@ -41,6 +43,7 @@ whambam https://api.example.com/users -m POST \
   -d '{"name":"Ada"}' -T application/json            # POST a JSON body
 whambam https://example.com -z 10s --no-ui -o json --output report.json
 whambam https://example.com --debug                  # send one request and show it
+whambam https://example.com -z 30s --assert 'p99<200ms,errors<1%'   # exit 1 if the checks fail
 ```
 
 When stdout is not a terminal (piped or redirected), whambam skips the UI and prints the report.
@@ -100,6 +103,55 @@ When stdout is not a terminal (piped or redirected), whambam skips the UI and pr
 | `--no-color` | No colors (also honours `NO_COLOR`) | – |
 | `--fps <N>` | UI refresh rate | 10 |
 
+### Checks
+
+| Option | Description |
+|---|---|
+| `--baseline <FILE>` | Compare with a saved report (`-o json`): deltas in the UI, a comparison in the report |
+| `--assert <CHECK>` | Exit with status 1 unless the run meets the check; repeatable or comma-separated |
+
+Checks are `metric` `op` `value`, with `op` one of `<` `<=` `>` `>=`:
+
+| Metric | Values | Examples |
+|---|---|---|
+| `p50` `p90` `p95` `p99` `p99.9` `mean` `min` `max` | latency: `200ms`, `1.5s` (bare numbers are ms) | `p99<200ms`, `max<=2s` |
+| `rps` | requests per second | `rps>=1000` |
+| `success`, `errors` | percent of requests | `errors<0.5%`, `success>=99.9` |
+| any | change from `--baseline`: `+N%` or `-N%` | `p99<+10%`, `rps>-5%` |
+
+`whambam compare BASE.json NEW.json [--assert ...] [-o json]` compares two saved reports without running a test.
+
+## Live load controls
+
+While a test runs:
+
+| Key | Effect |
+|---|---|
+| `+` / `-` (or `↑` / `↓`) | 10% more or fewer workers |
+| `]` / `[` | 10% higher or lower rate (`--qps` total, or `-q` per worker) |
+
+Each change is marked on the charts and listed in the report (`adjustments` in JSON), so you can raise the load step by step and see where latency turns. With `--qps`, a new rate takes effect immediately; requests already queued under the old rate are re-timed.
+
+## Baselines and CI
+
+```bash
+whambam https://staging.example.com -z 30s --qps 200 --no-ui -o json --output baseline.json
+# ...ship a change...
+whambam https://staging.example.com -z 30s --qps 200 --baseline baseline.json \
+  --assert 'p99<+10%,errors<1%'
+```
+
+In GitHub Actions, use the bundled action. It installs the right binary for the runner, writes a JSON report, adds a summary to the job page and fails the job when a check fails:
+
+```yaml
+- uses: cloudy-native/whambam.dev@v1
+  with:
+    url: https://staging.example.com/health
+    args: -z 30s -c 20 --qps 200
+    assert: p99<250ms,errors<1%
+    baseline: baseline.json   # optional
+```
+
 ## Differences from hey
 
 - **`-q` keeps hey's meaning** (per worker). For a target total rate use `--qps`, which also corrects for coordinated omission: each request is timed from when it was *due*, so a server stall shows up in the percentiles instead of hiding in fewer requests.
@@ -113,6 +165,8 @@ When stdout is not a terminal (piped or redirected), whambam skips the UI and pr
 | Key | Action |
 |---|---|
 | `1` `2` `3`, `←` `→`, `Tab` | Dashboard · Charts · Status & errors |
+| `+` `-` / `↑` `↓` | More or fewer workers while running |
+| `]` `[` | Higher or lower rate while running (`--qps` / `-q`) |
 | `r` | Run the same test again (after it finishes) |
 | `h`, `?` | Help |
 | `q`, `Esc`, `Ctrl-C` | Quit and print the report |
@@ -135,17 +189,19 @@ cargo run --release -p test-utils --bin demo-server -- 8080
 ```
 src/
 ├── main.rs        entry point
-├── lib.rs         run(): debug, UI or headless mode, then the report
+├── lib.rs         run(): compare, debug, UI or headless mode, then the report
+├── checks.rs      --baseline, --assert and `whambam compare`
 ├── cli/           clap flags (load, request, connection, output) and value parsers
 ├── config/        validated TestConfig: request spec, network settings, pacing
 ├── http/          reqwest clients, DNS resolver (--connect-to, -4/-6), request execution, error kinds, --debug
-├── engine/        workers, shared schedule (request budget, deadlines, rate pacing)
+├── engine/        worker pool, live controls, shared schedule (budget, deadlines, rate pacing)
 ├── stats/         live TestState: HDR histogram, status/error counts, chart series
-├── report/        Report model → text, JSON; streaming CSV
+├── report/        Report model → text, JSON; streaming CSV; metrics, baselines, assertions
 └── ui/            ratatui dashboard, charts, status & errors
 test-utils/        HTTP/1.1 + h2c mock server for tests, demo server for recordings
 schema/            JSON schema for -o json
-packaging/         Homebrew formula and Scoop manifest renderer
+packaging/         Homebrew formula and Scoop manifest renderer, Action job summary
+action.yml         GitHub Action
 ```
 
 ## Development
