@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use hdrhistogram::Histogram;
+use serde::Serialize;
 
 pub use series::{SAMPLE_INTERVAL, Sample, Series};
 
@@ -15,6 +16,15 @@ use crate::http::{ErrorKind, Outcome};
 
 /// Highest latency the histogram tracks precisely (one hour, in µs).
 const MAX_TRACKED_US: u64 = 3_600_000_000;
+
+/// A live change to the load, made from the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Adjustment {
+    /// Seconds since the test started.
+    pub t: f64,
+    pub workers: usize,
+    pub rate: Option<f64>,
+}
 
 /// One finished request.
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +57,7 @@ pub struct TestState {
     pub bytes_received: u64,
     pub series: Series,
     pub interrupted: bool,
+    pub adjustments: Vec<Adjustment>,
 }
 
 impl Default for TestState {
@@ -63,6 +74,7 @@ impl Default for TestState {
             bytes_received: 0,
             series: Series::default(),
             interrupted: false,
+            adjustments: Vec::new(),
         }
     }
 }
@@ -83,6 +95,12 @@ impl TestState {
         self.histogram.saturating_record(micros);
         let now = self.start.elapsed().as_secs_f64();
         self.series.record(now, m.latency.as_secs_f64() * 1e3);
+    }
+
+    /// Note a live change to workers or rate.
+    pub fn record_adjustment(&mut self, workers: usize, rate: Option<f64>) {
+        let t = self.elapsed().as_secs_f64();
+        self.adjustments.push(Adjustment { t, workers, rate });
     }
 
     /// Advance the chart series to now; call from the UI tick.
@@ -247,6 +265,8 @@ mod tests {
         assert!(snap.is_complete() && snap.interrupted);
         assert_eq!(snap.elapsed(), first);
         assert!(snap.rps() > 0.0);
+        shared.lock().record_adjustment(8, Some(5.0));
+        assert_eq!(shared.lock().adjustments[0].workers, 8);
         shared.reset();
         assert_eq!(shared.lock().completed, 0);
     }

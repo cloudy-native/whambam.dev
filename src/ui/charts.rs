@@ -10,6 +10,7 @@ use ratatui::widgets::{Axis, Block, Chart, Dataset, GraphType, Paragraph};
 
 use super::format::{compact, latency, seconds, ticks};
 use super::theme::Theme;
+use crate::report::{Baseline, Metric, Metrics};
 use crate::stats::TestState;
 
 const HEADROOM: f64 = 1.1;
@@ -44,20 +45,63 @@ fn line<'a>(points: &'a [(f64, f64)], style: Style) -> Dataset<'a> {
         .data(points)
 }
 
-/// Full-size throughput chart above a latency chart.
-pub fn draw_split(f: &mut Frame, area: Rect, state: &TestState, t: &Theme) {
+/// Vertical lines where the load was changed live.
+fn markers(state: &TestState, x: [f64; 2], y_max: f64) -> Vec<Vec<(f64, f64)>> {
+    state
+        .adjustments
+        .iter()
+        .filter(|a| a.t >= x[0] && a.t <= x[1])
+        .map(|a| vec![(a.t, 0.0), (a.t, y_max)])
+        .collect()
+}
+
+/// A horizontal reference line across the chart.
+fn hline(x: [f64; 2], y: f64) -> Vec<(f64, f64)> {
+    vec![(x[0], y), (x[1], y)]
+}
+
+/// Datasets for markers and an optional baseline level, drawn under the data.
+fn overlays<'a>(
+    marks: &'a [Vec<(f64, f64)>],
+    base: &'a [(f64, f64)],
+    t: &Theme,
+) -> Vec<Dataset<'a>> {
+    let mut sets: Vec<Dataset> = marks.iter().map(|m| line(m, t.muted())).collect();
+    if !base.is_empty() {
+        sets.push(line(base, t.muted()).name("baseline"));
+    }
+    sets
+}
+
+/// Full-size throughput chart above a latency chart, with baseline levels.
+pub fn draw_split(
+    f: &mut Frame,
+    area: Rect,
+    state: &TestState,
+    t: &Theme,
+    baseline: Option<&Baseline>,
+) {
     let [top, bottom] = Layout::vertical([Constraint::Percentage(50); 2]).areas(area);
     let elapsed = state.elapsed().as_secs_f64();
     let last = state.series.last();
 
     let rps = state.series.points(|s| s.rps);
-    let b = bounds(&rps, elapsed);
+    let mut b = bounds(&rps, elapsed);
+    let base_rps = baseline.map(|bl| bl.metric(Metric::Rps));
+    b.y_max = b.y_max.max(base_rps.unwrap_or(0.0) * HEADROOM);
+    let base_line = base_rps.map(|y| hline(b.x, y)).unwrap_or_default();
+    let marks = markers(state, b.x, b.y_max);
     let title = format!(
-        " Throughput · now {} · overall {} req/s ",
+        " Throughput · now {} · overall {} req/s{} ",
         compact(last.map_or(0.0, |s| s.rps)),
-        compact(state.rps())
+        compact(state.rps()),
+        base_rps
+            .map(|y| format!(" · baseline {}", compact(y)))
+            .unwrap_or_default()
     );
-    let chart = Chart::new(vec![line(&rps, t.throughput())])
+    let mut sets = overlays(&marks, &base_line, t);
+    sets.push(line(&rps, t.throughput()));
+    let chart = Chart::new(sets)
         .block(Block::bordered().title(Line::styled(title, t.throughput())))
         .x_axis(time_axis(&b, t))
         .y_axis(
@@ -69,13 +113,22 @@ pub fn draw_split(f: &mut Frame, area: Rect, state: &TestState, t: &Theme) {
     f.render_widget(chart, top);
 
     let lat = state.series.points(|s| s.latency_ms);
-    let b = bounds(&lat, elapsed);
+    let mut b = bounds(&lat, elapsed);
+    let base_mean = baseline.map(|bl| bl.metric(Metric::Mean));
+    b.y_max = b.y_max.max(base_mean.unwrap_or(0.0) * HEADROOM);
+    let base_line = base_mean.map(|y| hline(b.x, y)).unwrap_or_default();
+    let marks = markers(state, b.x, b.y_max);
     let title = format!(
-        " Mean latency · now {} · p99 {} ",
+        " Mean latency · now {} · p99 {}{} ",
         latency(last.map_or(0.0, |s| s.latency_ms)),
-        latency(state.percentile_ms(0.99))
+        latency(state.percentile_ms(0.99)),
+        base_mean
+            .map(|y| format!(" · baseline mean {}", latency(y)))
+            .unwrap_or_default()
     );
-    let chart = Chart::new(vec![line(&lat, t.latency())])
+    let mut sets = overlays(&marks, &base_line, t);
+    sets.push(line(&lat, t.latency()));
+    let chart = Chart::new(sets)
         .block(Block::bordered().title(Line::styled(title, t.latency())))
         .x_axis(time_axis(&b, t))
         .y_axis(
@@ -104,19 +157,20 @@ pub fn draw_combined(f: &mut Frame, area: Rect, state: &TestState, t: &Theme) {
     let lb = bounds(&lat, elapsed);
     let scale = rb.y_max / lb.y_max;
     let lat_scaled: Vec<(f64, f64)> = lat.iter().map(|&(x, y)| (x, y * scale)).collect();
+    let marks = markers(state, rb.x, rb.y_max);
 
-    let chart = Chart::new(vec![
-        line(&rps, t.throughput()),
-        line(&lat_scaled, t.latency()),
-    ])
-    .x_axis(time_axis(&rb, t))
-    .y_axis(
-        Axis::default()
-            .style(t.throughput())
-            .bounds([0.0, rb.y_max])
-            .labels(ticks(0.0, rb.y_max, 4, compact)),
-    )
-    .hidden_legend_constraints((Constraint::Length(0), Constraint::Length(0)));
+    let mut sets = overlays(&marks, &[], t);
+    sets.push(line(&rps, t.throughput()));
+    sets.push(line(&lat_scaled, t.latency()));
+    let chart = Chart::new(sets)
+        .x_axis(time_axis(&rb, t))
+        .y_axis(
+            Axis::default()
+                .style(t.throughput())
+                .bounds([0.0, rb.y_max])
+                .labels(ticks(0.0, rb.y_max, 4, compact)),
+        )
+        .hidden_legend_constraints((Constraint::Length(0), Constraint::Length(0)));
     f.render_widget(chart, plot);
     draw_right_axis(f, right, lb.y_max, t);
 }
@@ -152,5 +206,23 @@ mod tests {
         let b = bounds(&[(1.0, 10.0), (2.0, 20.0)], 2.0);
         assert_eq!(b.x, [1.0, 2.0]);
         assert!((b.y_max - 22.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn markers_only_inside_the_window() {
+        let mut s = TestState::default();
+        s.adjustments.push(crate::stats::Adjustment {
+            t: 1.0,
+            workers: 2,
+            rate: None,
+        });
+        s.adjustments.push(crate::stats::Adjustment {
+            t: 9.0,
+            workers: 3,
+            rate: None,
+        });
+        let m = markers(&s, [0.0, 5.0], 10.0);
+        assert_eq!(m, vec![vec![(1.0, 0.0), (1.0, 10.0)]]);
+        assert_eq!(hline([0.0, 2.0], 3.0), vec![(0.0, 3.0), (2.0, 3.0)]);
     }
 }

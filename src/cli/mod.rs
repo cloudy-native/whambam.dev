@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! Command-line interface. Flags follow hey where hey has them.
 
+mod check;
 mod network;
 mod output;
 pub mod parse;
@@ -10,6 +11,7 @@ use std::time::Duration;
 
 use clap::Parser;
 
+pub use check::{CheckArgs, Command, CompareArgs};
 pub use network::{HttpVersion, NetworkArgs};
 pub use output::{OutputArgs, OutputFormat};
 pub use request::RequestArgs;
@@ -22,11 +24,16 @@ use parse::{parse_count, parse_duration};
     author,
     version,
     about = "Fast HTTP(S) load testing with a live terminal UI and hey-compatible flags",
-    after_help = "Examples:\n  whambam https://example.com\n  whambam https://example.com -n 10k -c 100\n  whambam https://example.com -z 30s --qps 500\n  whambam https://api.example.com -m POST -d '{\"a\":1}' -T application/json\n  whambam https://example.com -z 10s --no-ui -o json --output report.json"
+    after_help = "Examples:\n  whambam https://example.com\n  whambam https://example.com -n 10k -c 100\n  whambam https://example.com -z 30s --qps 500\n  whambam https://api.example.com -m POST -d '{\"a\":1}' -T application/json\n  whambam https://example.com -z 10s --no-ui -o json --output report.json\n  whambam https://example.com -z 30s --baseline report.json --assert 'p99<+10%,errors<1%'\n  whambam compare before.json after.json"
 )]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// Target URL
-    pub url: String,
+    #[arg(required = true)]
+    pub url: Option<String>,
 
     #[command(flatten)]
     pub load: LoadArgs,
@@ -39,6 +46,9 @@ pub struct Cli {
 
     #[command(flatten)]
     pub output: OutputArgs,
+
+    #[command(flatten)]
+    pub check: CheckArgs,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -161,6 +171,30 @@ mod tests {
         assert!(parse(&["http://x", "-H", "nocolon"]).is_err());
         assert!(parse(&["http://x", "-m", "NOT VALID"]).is_err());
         assert!(parse(&["http://x", "-o", "xml"]).is_err());
+    }
+
+    #[test]
+    fn checks_and_compare_subcommand_parse() {
+        let cli = parse(&[
+            "http://x",
+            "--baseline",
+            "b.json",
+            "--assert",
+            "p99<200ms,rps>10",
+        ])
+        .unwrap();
+        assert_eq!(cli.check.asserts.len(), 2);
+        assert!(cli.check.baseline.is_some());
+        assert!(parse(&["http://x", "--assert", "p99"]).is_err());
+
+        let cli = parse(&["compare", "a.json", "b.json", "--assert", "p99<+5%"]).unwrap();
+        let Some(Command::Compare(args)) = cli.command else {
+            panic!("expected compare")
+        };
+        assert_eq!(args.current.to_str(), Some("b.json"));
+        assert_eq!(args.asserts.len(), 1);
+        assert!(cli.url.is_none());
+        assert!(parse(&["compare", "a.json"]).is_err());
     }
 
     #[test]

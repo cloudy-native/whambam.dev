@@ -141,7 +141,7 @@ mod tests {
     fn spec(args: &[&str]) -> Result<RequestSpec> {
         let cli = Cli::try_parse_from(std::iter::once("whambam").chain(args.iter().copied()))?;
         let net = NetConfig::from_cli(&cli.network)?;
-        RequestSpec::from_cli(&cli.url, &cli.request, &net)
+        RequestSpec::from_cli(cli.url.as_deref().unwrap(), &cli.request, &net)
     }
 
     #[test]

@@ -15,8 +15,8 @@ use super::UiOptions;
 use super::theme::Theme;
 use super::view::{self, Tab, ViewCtx};
 use crate::config::TestConfig;
-use crate::engine;
-use crate::report::CsvSink;
+use crate::engine::{self, Control, Settings};
+use crate::report::{Baseline, CsvSink};
 use crate::stats::SharedState;
 
 type RunTask = JoinHandle<Result<Option<CsvSink>>>;
@@ -34,12 +34,14 @@ pub fn run(
 ) -> Result<Option<CsvSink>> {
     let handle = Handle::current();
     let app = App {
+        control: Control::new(Settings::from_config(&config)),
         config,
         state,
         stop: CancellationToken::new(),
         tab: Tab::Dashboard,
         help: false,
         theme: Theme::new(options.color),
+        baseline: options.baseline.clone(),
         frame: Duration::from_secs_f64(1.0 / f64::from(options.fps)),
     };
     tokio::task::block_in_place(|| app.run(&handle, sink))
@@ -47,12 +49,14 @@ pub fn run(
 
 struct App {
     config: Arc<TestConfig>,
+    control: Control,
     state: SharedState,
     stop: CancellationToken,
     tab: Tab,
     help: bool,
     theme: Theme,
     frame: Duration,
+    baseline: Option<Arc<Baseline>>,
 }
 
 enum Action {
@@ -82,6 +86,7 @@ impl App {
             self.state.clone(),
             self.stop.clone(),
             sink,
+            self.control.clone(),
         );
         handle.spawn(run)
     }
@@ -102,6 +107,8 @@ impl App {
                 state.tick();
                 let ctx = ViewCtx {
                     config: &self.config,
+                    settings: self.control.get(),
+                    baseline: self.baseline.as_deref(),
                     theme: self.theme,
                     tab: self.tab,
                     help: self.help,
@@ -131,6 +138,22 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
             KeyCode::Char('r') => Action::Restart,
+            KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Up => {
+                self.control.step_workers(1);
+                Action::None
+            }
+            KeyCode::Char('-') | KeyCode::Char('_') | KeyCode::Down => {
+                self.control.step_workers(-1);
+                Action::None
+            }
+            KeyCode::Char(']') => {
+                self.control.step_rate(1);
+                Action::None
+            }
+            KeyCode::Char('[') => {
+                self.control.step_rate(-1);
+                Action::None
+            }
             KeyCode::Char('h') | KeyCode::Char('?') => {
                 self.help = !self.help;
                 Action::None

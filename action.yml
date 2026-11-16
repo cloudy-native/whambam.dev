@@ -1,0 +1,92 @@
+name: whambam load test
+description: Load-test an HTTP(S) endpoint with whambam and fail the job when --assert checks fail.
+author: cloudy-native
+branding:
+  icon: activity
+  color: orange
+
+inputs:
+  url:
+    description: Target URL
+    required: true
+  args:
+    description: "Extra whambam arguments, e.g. '-z 30s -c 50 --qps 200'"
+    required: false
+    default: "-n 1000 -c 50"
+  assert:
+    description: "Checks that must pass, e.g. 'p99<200ms,errors<1%' (or 'p99<+10%' with baseline)"
+    required: false
+    default: ""
+  baseline:
+    description: Path to a saved JSON report to compare with
+    required: false
+    default: ""
+  report:
+    description: Where to write the JSON report (uploadable as an artifact, or a later baseline)
+    required: false
+    default: whambam-report.json
+  version:
+    description: whambam release tag to install, e.g. v1.2.0, or 'latest'
+    required: false
+    default: latest
+
+outputs:
+  report:
+    description: Path of the JSON report
+    value: ${{ inputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install whambam
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)     target=x86_64-unknown-linux-musl;  ext=tar.gz ;;
+          Linux-ARM64)   target=aarch64-unknown-linux-musl; ext=tar.gz ;;
+          macOS-X64)     target=x86_64-apple-darwin;        ext=tar.gz ;;
+          macOS-ARM64)   target=aarch64-apple-darwin;       ext=tar.gz ;;
+          Windows-X64)   target=x86_64-pc-windows-msvc;     ext=zip ;;
+          Windows-ARM64) target=aarch64-pc-windows-msvc;    ext=zip ;;
+          *) echo "::error::whambam has no build for $RUNNER_OS $RUNNER_ARCH"; exit 1 ;;
+        esac
+        tag=$VERSION
+        if [ "$tag" = latest ]; then
+          tag=$(gh release view --repo cloudy-native/whambam.dev --json tagName --jq .tagName)
+        fi
+        dir="$RUNNER_TEMP/whambam"
+        mkdir -p "$dir"
+        gh release download "$tag" --repo cloudy-native/whambam.dev \
+          --pattern "whambam-$tag-$target.$ext" --dir "$dir" --clobber
+        if [ "$ext" = zip ]; then
+          pwsh -NoProfile -Command "Expand-Archive -Force -Path '$dir/whambam-$tag-$target.zip' -DestinationPath '$dir'"
+        else
+          tar -xzf "$dir/whambam-$tag-$target.tar.gz" -C "$dir"
+        fi
+        echo "$dir" >> "$GITHUB_PATH"
+        echo "Installed whambam $tag ($target)"
+
+    - name: Run whambam
+      shell: bash
+      env:
+        URL: ${{ inputs.url }}
+        ARGS: ${{ inputs.args }}
+        ASSERT: ${{ inputs.assert }}
+        BASELINE: ${{ inputs.baseline }}
+        REPORT: ${{ inputs.report }}
+      run: |
+        set -uo pipefail
+        extra=()
+        [ -n "$ASSERT" ] && extra+=(--assert "$ASSERT")
+        [ -n "$BASELINE" ] && extra+=(--baseline "$BASELINE")
+        # shellcheck disable=SC2086 # ARGS is a list of flags
+        whambam "$URL" --no-ui -o json --output "$REPORT" $ARGS ${extra[@]+"${extra[@]}"}
+        status=$?
+        if [ -f "$REPORT" ]; then
+          jq -r --arg url "$URL" -f "$GITHUB_ACTION_PATH/packaging/action-summary.jq" "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit $status

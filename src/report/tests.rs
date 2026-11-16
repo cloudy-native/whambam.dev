@@ -138,11 +138,12 @@ fn write_report_writes_files_and_skips_quiet() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("r.json");
     let s = state(&[1], 0);
-    write_report(OutputFormat::Json, &s, &config(&[]), Some(&path)).unwrap();
+    let report = Report::new(&s, &config(&[]));
+    write_report(OutputFormat::Json, &report, Some(&path)).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(parsed["summary"]["requests"], 1);
 
     let quiet = dir.path().join("q.txt");
-    write_report(OutputFormat::Quiet, &s, &config(&[]), Some(&quiet)).unwrap();
+    write_report(OutputFormat::Quiet, &report, Some(&quiet)).unwrap();
     assert!(!quiet.exists());
 }

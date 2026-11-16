@@ -4,7 +4,7 @@
 
 use std::io::{self, Write};
 
-use super::Report;
+use super::{AssertResult, ComparisonRow, Report};
 
 const BAR_WIDTH: usize = 40;
 
@@ -43,7 +43,65 @@ pub fn write_text<W: Write>(w: &mut W, r: &Report) -> io::Result<()> {
         }
     }
 
+    if !r.adjustments.is_empty() {
+        writeln!(w, "\nLoad changes:")?;
+        for a in &r.adjustments {
+            let rate = a
+                .rate
+                .map(|q| format!(", {q:.1} req/s"))
+                .unwrap_or_default();
+            writeln!(w, "  at {:.1}s: {} workers{rate}", a.t, a.workers)?;
+        }
+    }
+    if let Some(rows) = &r.comparison {
+        write_comparison(w, rows)?;
+    }
+    if let Some(results) = &r.assertions {
+        write_assertions(w, results)?;
+    }
     write_notes(w, r)
+}
+
+/// "Compared with baseline" table.
+pub fn write_comparison<W: Write>(w: &mut W, rows: &[ComparisonRow]) -> io::Result<()> {
+    writeln!(w, "\nCompared with baseline:")?;
+    writeln!(
+        w,
+        "  {:<8} {:>14} {:>14} {:>9}",
+        "metric", "baseline", "current", "change"
+    )?;
+    for row in rows {
+        let change = match row.change_pct {
+            Some(p) => format!("{p:+.1}%"),
+            None => "n/a".to_string(),
+        };
+        let mark = if row.improved { " " } else { " ▲" };
+        writeln!(
+            w,
+            "  {:<8} {:>14} {:>14} {:>9}{mark}",
+            row.metric.name(),
+            row.metric.format(row.baseline),
+            row.metric.format(row.current),
+            change
+        )?;
+    }
+    writeln!(w, "  (▲ = worse than baseline)")
+}
+
+/// One line per assertion, ✓ or ✗.
+pub fn write_assertions<W: Write>(w: &mut W, results: &[AssertResult]) -> io::Result<()> {
+    writeln!(w, "\nAssertions:")?;
+    for r in results {
+        let mark = if r.passed { "✓" } else { "✗" };
+        writeln!(
+            w,
+            "  {mark} {}  (actual {}, limit {})",
+            r.assertion,
+            r.metric.format(r.actual),
+            r.metric.format(r.threshold)
+        )?;
+    }
+    Ok(())
 }
 
 fn write_histogram<W: Write>(w: &mut W, r: &Report) -> io::Result<()> {

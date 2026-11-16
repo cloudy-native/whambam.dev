@@ -126,3 +126,98 @@ fn version_and_help_work() {
         .stdout(contains("--qps"))
         .stdout(contains("--connect-to"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failing_assertions_exit_non_zero() {
+    let server = MockServer::start().await;
+    whambam()
+        .args([
+            &server.url(),
+            "-n",
+            "5",
+            "-c",
+            "1",
+            "--no-ui",
+            "--assert",
+            "rps>1000000,errors<1%",
+        ])
+        .assert()
+        .failure()
+        .stdout(contains("✗ rps>1000000"))
+        .stdout(contains("✓ errors<1%"))
+        .stderr(contains("1 of 2 assertions failed: rps>1000000"));
+    whambam()
+        .args([
+            &server.url(),
+            "-n",
+            "5",
+            "-c",
+            "1",
+            "--no-ui",
+            "--assert",
+            "p99<10s",
+        ])
+        .assert()
+        .success();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn baseline_run_and_compare_command() {
+    let server = MockServer::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().join("base.json");
+    let next = dir.path().join("next.json");
+    whambam()
+        .args([
+            &server.url(),
+            "-n",
+            "20",
+            "-c",
+            "2",
+            "--no-ui",
+            "-o",
+            "json",
+            "--output",
+        ])
+        .arg(&base)
+        .assert()
+        .success();
+    let output = whambam()
+        .args([
+            &server.url(),
+            "-n",
+            "20",
+            "-c",
+            "2",
+            "--no-ui",
+            "-o",
+            "json",
+            "--baseline",
+        ])
+        .arg(&base)
+        .args(["--assert", "success>=+0%", "--output"])
+        .arg(&next)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&std::fs::read(&next).unwrap()).unwrap();
+    assert_eq!(report["comparison"].as_array().unwrap().len(), 8);
+    assert_eq!(report["assertions"][0]["passed"], true);
+
+    whambam()
+        .arg("compare")
+        .arg(&base)
+        .arg(&next)
+        .assert()
+        .success()
+        .stdout(contains("Compared with baseline:"));
+    whambam()
+        .args(["http://x", "--no-ui", "--assert", "p99<+10%"])
+        .assert()
+        .failure()
+        .stderr(contains("add --baseline FILE"));
+}
