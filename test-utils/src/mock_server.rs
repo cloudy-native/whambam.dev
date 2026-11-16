@@ -1,236 +1,177 @@
-// Copyright (c) 2025 Stephen Harrison
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
+// SPDX-License-Identifier: MIT
+//! A small HTTP/1.1 + HTTP/2 (h2c) server for tests. It records what it
+//! receives and answers "Hello, World!" with a configurable status and delay.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, time::Duration};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::time::sleep;
+use std::time::Duration;
 
-struct ServerState {
-    request_count: AtomicUsize,
-    headers: Mutex<HashMap<String, Vec<String>>>,
-    status_code: AtomicUsize,
-    delay_ms: AtomicUsize,
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use hyper::body::Incoming;
+use hyper::service::service_fn;
+use hyper::{Request, Response};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder;
+use tokio::net::TcpListener;
+
+pub const BODY: &str = "Hello, World!";
+
+#[derive(Default)]
+struct Recorded {
+    headers: HashMap<String, Vec<String>>,
+    body: Option<Vec<u8>>,
+    method: Option<String>,
+    version: Option<String>,
 }
 
-impl ServerState {
-    fn new() -> Self {
-        ServerState {
-            request_count: AtomicUsize::new(0),
-            headers: Mutex::new(HashMap::new()),
-            status_code: AtomicUsize::new(200),
-            delay_ms: AtomicUsize::new(0),
-        }
-    }
+struct State {
+    requests: AtomicUsize,
+    status: AtomicU16,
+    delay_ms: AtomicU64,
+    recorded: Mutex<Recorded>,
 }
 
 pub struct MockServer {
     port: u16,
-    state: Arc<ServerState>,
-    server_task: Option<tokio::task::JoinHandle<()>>,
+    state: Arc<State>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl MockServer {
     pub async fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let state = Arc::new(ServerState::new());
-
-        let state_clone = state.clone();
-        let server_task = tokio::spawn(async move {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock server");
+        let port = listener.local_addr().expect("local addr").port();
+        let state = Arc::new(State {
+            requests: AtomicUsize::new(0),
+            status: AtomicU16::new(200),
+            delay_ms: AtomicU64::new(0),
+            recorded: Mutex::new(Recorded::default()),
+        });
+        let accept_state = Arc::clone(&state);
+        let task = tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
-                let state = state_clone.clone();
+                let state = Arc::clone(&accept_state);
                 tokio::spawn(async move {
-                    handle_connection(stream, state).await;
+                    let service = service_fn(move |req| handle(req, Arc::clone(&state)));
+                    let _ = Builder::new(TokioExecutor::new())
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await;
                 });
             }
         });
-
-        MockServer {
-            port,
-            state,
-            server_task: Some(server_task),
-        }
+        MockServer { port, state, task }
     }
 
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}", self.port)
     }
 
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     pub fn request_count(&self) -> usize {
-        self.state.request_count.load(Ordering::SeqCst)
+        self.state.requests.load(Ordering::SeqCst)
     }
 
     pub fn set_response_status(&self, status: u16) {
-        self.state
-            .status_code
-            .store(status as usize, Ordering::SeqCst);
+        self.state.status.store(status, Ordering::SeqCst);
     }
 
     pub fn set_response_delay(&self, delay_ms: u64) {
-        self.state
-            .delay_ms
-            .store(delay_ms as usize, Ordering::SeqCst);
+        self.state.delay_ms.store(delay_ms, Ordering::SeqCst);
     }
 
-    pub fn get_received_headers(&self) -> HashMap<String, Vec<String>> {
-        self.state.headers.lock().unwrap().clone()
+    /// Headers seen across all requests, keyed by lower-case name.
+    pub fn received_headers(&self) -> HashMap<String, Vec<String>> {
+        self.state.recorded.lock().unwrap().headers.clone()
+    }
+
+    pub fn last_body(&self) -> Option<Vec<u8>> {
+        self.state.recorded.lock().unwrap().body.clone()
+    }
+
+    pub fn last_method(&self) -> Option<String> {
+        self.state.recorded.lock().unwrap().method.clone()
+    }
+
+    pub fn last_version(&self) -> Option<String> {
+        self.state.recorded.lock().unwrap().version.clone()
     }
 }
 
 impl Drop for MockServer {
     fn drop(&mut self) {
-        if let Some(task) = self.server_task.take() {
-            task.abort();
-        }
+        self.task.abort();
     }
 }
 
-async fn handle_connection(mut stream: TcpStream, state: Arc<ServerState>) {
-    let mut buffer = [0; 1024];
-
-    // Read the request
-    let mut headers = Vec::new();
-
-    // Simple HTTP request parsing
-    let mut bytes_read = 0;
-    while bytes_read < buffer.len() {
-        match stream.read(&mut buffer[bytes_read..bytes_read + 1]).await {
-            Ok(0) => break, // End of stream
-            Ok(n) => {
-                bytes_read += n;
-
-                // Check if we have a complete line
-                if buffer[bytes_read - 1] == b'\n' {
-                    if bytes_read >= 2 && buffer[bytes_read - 2] == b'\r' {
-                        // We have a complete line
-                        let line = String::from_utf8_lossy(&buffer[..bytes_read - 2]);
-                        headers.push(line.to_string());
-
-                        // If we got an empty line, we're done with headers
-                        if line.is_empty() {
-                            break;
-                        }
-
-                        // Reset for next line
-                        buffer = [0; 1024];
-                        bytes_read = 0;
-                    }
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    // Process headers - Do this inside a block to ensure the mutex is dropped before the await
+async fn handle(
+    req: Request<Incoming>,
+    state: Arc<State>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
+    let (parts, body) = req.into_parts();
+    let body = body
+        .collect()
+        .await
+        .map(|b| b.to_bytes().to_vec())
+        .unwrap_or_default();
     {
-        let mut header_map = state.headers.lock().unwrap();
-
-        for line in headers.iter().skip(1) {
-            // Skip the request line
-            if line.is_empty() {
-                break;
-            }
-
-            if let Some(idx) = line.find(':') {
-                let (name, value) = line.split_at(idx);
-                let name = name.trim().to_lowercase();
-                let value = value[1..].trim().to_string();
-
-                header_map.entry(name).or_insert_with(Vec::new).push(value);
-            }
+        let mut rec = state.recorded.lock().unwrap();
+        for (name, value) in &parts.headers {
+            let value = String::from_utf8_lossy(value.as_bytes()).into_owned();
+            rec.headers
+                .entry(name.as_str().to_string())
+                .or_default()
+                .push(value);
         }
+        rec.method = Some(parts.method.to_string());
+        rec.version = Some(format!("{:?}", parts.version));
+        rec.body = (!body.is_empty()).then_some(body);
     }
-
-    // Increment request counter
-    state.request_count.fetch_add(1, Ordering::SeqCst);
-
-    // Apply delay if configured
-    let delay_ms = state.delay_ms.load(Ordering::SeqCst);
-    if delay_ms > 0 {
-        sleep(Duration::from_millis(delay_ms as u64)).await;
+    state.requests.fetch_add(1, Ordering::SeqCst);
+    let delay = state.delay_ms.load(Ordering::SeqCst);
+    if delay > 0 {
+        tokio::time::sleep(Duration::from_millis(delay)).await;
     }
-
-    // Send response
-    let status = state.status_code.load(Ordering::SeqCst) as u16;
-    let status_text = match status {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        _ => "Unknown",
-    };
-
-    let response = format!(
-        "HTTP/1.1 {} {}\r\n\
-         Content-Type: text/plain\r\n\
-         Connection: close\r\n\
-         Content-Length: 13\r\n\
-         \r\n\
-         Hello, World!",
-        status, status_text
-    );
-
-    let _ = stream.write_all(response.as_bytes()).await;
-    let _ = stream.flush().await;
+    let response = Response::builder()
+        .status(state.status.load(Ordering::SeqCst))
+        .header("content-type", "text/plain")
+        .body(Full::new(Bytes::from_static(BODY.as_bytes())))
+        .expect("valid response");
+    Ok(response)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest::Client;
 
     #[tokio::test]
-    async fn test_mock_server() {
+    async fn records_requests_and_serves_status() {
         let server = MockServer::start().await;
-        let client = Client::new();
-
-        // Test basic request
-        let resp = client.get(&server.url()).send().await.unwrap();
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let client = reqwest::Client::new();
+        let resp = client.get(server.url()).send().await.unwrap();
         assert_eq!(resp.status().as_u16(), 200);
-        assert_eq!(server.request_count(), 1);
+        assert_eq!(resp.text().await.unwrap(), BODY);
 
-        // Test with custom status code
         server.set_response_status(404);
-        let resp = client.get(&server.url()).send().await.unwrap();
-        assert_eq!(resp.status().as_u16(), 404);
-        assert_eq!(server.request_count(), 2);
-
-        // Test with custom headers
-        let _resp = client
-            .get(&server.url())
-            .header("X-Test", "test-value")
-            .header("User-Agent", "mock-client")
+        let resp = client
+            .post(server.url())
+            .header("X-Test", "v")
+            .body("data")
             .send()
             .await
             .unwrap();
-
-        let headers = server.get_received_headers();
-        assert!(headers.contains_key("x-test"));
-        assert_eq!(headers.get("x-test").unwrap()[0], "test-value");
-        assert_eq!(server.request_count(), 3);
+        assert_eq!(resp.status().as_u16(), 404);
+        assert_eq!(server.request_count(), 2);
+        assert_eq!(server.received_headers()["x-test"], vec!["v".to_string()]);
+        assert_eq!(server.last_body().unwrap(), b"data");
+        assert_eq!(server.last_method().unwrap(), "POST");
     }
 }

@@ -1,0 +1,116 @@
+name: Build target
+
+# Reusable: build, smoke-test and package one target on its native runner.
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Rust target triple
+        required: true
+        type: string
+      runner:
+        description: GitHub-hosted runner with the same OS and CPU architecture
+        required: true
+        type: string
+      tag:
+        description: Release tag used in archive names
+        required: true
+        type: string
+      archive:
+        description: tar.gz or zip
+        type: string
+        default: tar.gz
+      deb:
+        description: Also build a .deb package
+        type: boolean
+        default: false
+      musl:
+        description: Static musl build (installs musl-tools)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ inputs.target }}
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ inputs.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ inputs.target }}
+
+      - name: Install musl toolchain
+        if: inputs.musl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          # cc-rs looks for <arch>-linux-musl-gcc; musl-tools ships musl-gcc for the host arch.
+          echo "CC_$(echo '${{ inputs.target }}' | tr '-' '_')=musl-gcc" >> "$GITHUB_ENV"
+
+      - name: Ensure clang (ring needs it on Windows ARM64)
+        if: inputs.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
+            choco install llvm --no-progress -y
+            "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          }
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ inputs.target }}
+
+      - name: Smoke test
+        run: |
+          bin=target/${{ inputs.target }}/release/whambam
+          "$bin" --version
+          "$bin" --help > /dev/null
+
+      - name: Package (tar.gz)
+        if: inputs.archive == 'tar.gz'
+        run: |
+          mkdir -p dist
+          name=whambam-${{ inputs.tag }}-${{ inputs.target }}
+          cp README.md LICENSE target/${{ inputs.target }}/release/
+          tar -czf "dist/$name.tar.gz" -C target/${{ inputs.target }}/release whambam README.md LICENSE
+
+      - name: Package (zip)
+        if: inputs.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $name = "whambam-${{ inputs.tag }}-${{ inputs.target }}"
+          Compress-Archive -Path target/${{ inputs.target }}/release/whambam.exe, README.md, LICENSE -DestinationPath "dist/$name.zip"
+
+      - name: Package (.deb)
+        if: inputs.deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build --no-strip --target ${{ inputs.target }} --output dist/
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          for f in *; do
+            if command -v sha256sum > /dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi > "$f.sha256"
+          done
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ inputs.target }}
+          path: dist/*
+          if-no-files-found: error

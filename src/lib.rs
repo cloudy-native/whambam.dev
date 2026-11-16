@@ -1,333 +1,101 @@
-//! whambam is a command-line tool for HTTP load testing.
-//!
-//! It allows users to test the throughput of an HTTP(S) endpoint by sending a
-//! configurable number of requests, with a specified concurrency level.
-//! The tool supports various HTTP methods, custom headers, request bodies, and
-//! provides detailed statistics in either an interactive UI or a text-based format.
+// SPDX-License-Identifier: MIT
+//! whambam: HTTP(S) load testing with a live terminal UI.
 
-// Copyright (c) 2025 Stephen Harrison
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-
-use anyhow::{anyhow, Context, Result};
-use clap::Parser;
-use std::fs;
-use std::io::{self, Write};
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use url::Url;
-
-pub mod args;
-pub mod tester;
+pub mod cli;
+pub mod config;
+pub mod engine;
+pub mod http;
+pub mod report;
+pub mod stats;
 pub mod ui;
 
-#[cfg(test)]
-pub mod tests;
+use std::io::{self, IsTerminal, Write};
+use std::sync::Arc;
+use std::time::Duration;
 
-use tester::{HttpMethod, SharedState, TestConfig, TestState, UnifiedRunner as TestRunner};
-use ui::App;
+use anyhow::{Result, bail};
+use tokio_util::sync::CancellationToken;
 
-/// hey-compatible text report (also used by `--no-ui`).
-pub use tester::print_hey_format_report;
+use cli::{Cli, OutputFormat};
+use config::TestConfig;
+use report::{CsvSink, write_report};
+use stats::SharedState;
 
-/// Custom parser for HTTP methods.
-fn parse_http_method(s: &str) -> Result<HttpMethod> {
-    match s.to_uppercase().as_str() {
-        "GET" => Ok(HttpMethod::GET),
-        "POST" => Ok(HttpMethod::POST),
-        "PUT" => Ok(HttpMethod::PUT),
-        "DELETE" => Ok(HttpMethod::DELETE),
-        "PATCH" => Ok(HttpMethod::PATCH),
-        "HEAD" => Ok(HttpMethod::HEAD),
-        "OPTIONS" => Ok(HttpMethod::OPTIONS),
-        "TRACE" => Ok(HttpMethod::TRACE),
-        "CONNECT" => Ok(HttpMethod::CONNECT),
-        _ => Err(anyhow!(
-            "Invalid HTTP method: {s}. Supported methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT"
-        )),
-    }
-}
-
-#[derive(Parser, Clone, Debug)]
-#[command(author, version, about = "A high-performance HTTP load testing tool.")]
-pub struct Args {
-    /// The URL to test.
-    #[arg(required = true)]
-    pub url: String,
-
-    /// Number of requests to send. If 0, the test runs indefinitely or until the duration is met.
-    #[arg(short = 'n', long, default_value = "200")]
-    pub requests: usize,
-
-    /// Number of concurrent connections to use.
-    #[arg(short, long, default_value = "50")]
-    pub concurrent: usize,
-
-    /// Duration of the test. If specified, the request count is ignored.
-    /// Examples: "10s", "1m", "2h".
-    #[arg(short = 'z', long = "duration", default_value = "0")]
-    pub duration_str: String,
-
-    /// Timeout for each request in seconds. Use 0 for no timeout.
-    #[arg(short = 't', long = "timeout", default_value = "20")]
-    pub timeout: u64,
-
-    /// Rate limit in QPS per worker (0 = no limit). Total QPS scales with concurrency.
-    #[arg(short = 'q', long, default_value = "0")]
-    pub rate_limit: f64,
-
-    /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT).
-    #[arg(short = 'm', long = "method", default_value = "GET", value_parser = parse_http_method)]
-    pub method: HttpMethod,
-
-    /// HTTP Accept header.
-    #[arg(short = 'A', long = "accept")]
-    pub accept: Option<String>,
-
-    /// Basic authentication in `username:password` format.
-    #[arg(short = 'a', long = "auth")]
-    pub basic_auth: Option<String>,
-
-    /// HTTP request body as a string.
-    #[arg(short = 'd', long = "body")]
-    pub body: Option<String>,
-
-    /// Path to a file containing the HTTP request body.
-    #[arg(short = 'D', long = "body-file")]
-    pub body_file: Option<String>,
-
-    /// Custom HTTP header. Can be specified multiple times.
-    /// Example: -H "Content-Type: application/json"
-    #[arg(short = 'H', long = "header", action = clap::ArgAction::Append)]
-    pub headers: Vec<String>,
-
-    /// Content-Type header. Defaults to "text/html".
-    #[arg(short = 'T', long = "content-type", default_value = "text/html")]
-    pub content_type: String,
-
-    /// HTTP Proxy address in `host:port` format.
-    #[arg(short = 'x', long = "proxy")]
-    pub proxy: Option<String>,
-
-    /// Disable HTTP compression.
-    #[arg(long = "disable-compression")]
-    pub disable_compression: bool,
-
-    /// Disable keep-alive, forcing new TCP connections for each request.
-    #[arg(long = "disable-keepalive")]
-    pub disable_keepalive: bool,
-
-    /// Disable following of HTTP redirects.
-    #[arg(long = "disable-redirects")]
-    pub disable_redirects: bool,
-
-    /// Disable interactive UI; print an accurate hey-inspired text summary to stdout.
-    #[arg(long = "no-ui", default_value = "false")]
-    pub no_ui: bool,
-}
-
-/// Parses a duration string (e.g., "10s", "5m", "1h") into a total number of seconds.
-fn parse_duration(duration_str: &str) -> Result<u64> {
-    if duration_str.is_empty() {
-        return Err(anyhow!("Duration string cannot be empty."));
-    }
-    if duration_str == "0" {
-        return Ok(0);
+/// Run whambam with parsed command-line arguments.
+pub async fn run(cli: Cli) -> Result<()> {
+    let config = Arc::new(TestConfig::from_cli(&cli)?);
+    let out = &cli.output;
+    if out.debug {
+        let mut buf = Vec::new();
+        http::run_debug(&config, &mut buf).await?;
+        return Ok(io::stdout().write_all(&buf)?);
     }
 
-    let last_char = duration_str.chars().last();
-
-    match last_char {
-        Some('s') | Some('m') | Some('h') => {
-            let num_part = &duration_str[0..duration_str.len() - 1];
-            if num_part.is_empty() {
-                return Err(anyhow!("Duration is missing a number."));
-            }
-            let num = num_part
-                .parse::<u64>()
-                .map_err(|_| anyhow!("Invalid number in duration"))?;
-            match last_char {
-                Some('s') => Ok(num),
-                Some('m') => Ok(num * 60),
-                Some('h') => Ok(num * 3600),
-                _ => unreachable!(), // Should not happen due to outer match
-            }
-        }
-        _ => {
-            // Assume the whole string is a number representing seconds.
-            duration_str
-                .parse::<u64>()
-                .map_err(|_| anyhow!("Invalid duration format"))
-        }
+    let interactive = !out.no_ui && io::stdout().is_terminal();
+    if interactive && out.output_format == OutputFormat::Csv && out.output_file.is_none() {
+        bail!("CSV output needs --output FILE while the UI is running (or add --no-ui)");
     }
-}
-
-pub async fn run(args: Args) -> Result<()> {
-    let _url = Url::parse(&args.url).context("Invalid URL")?;
-
-    if args.concurrent == 0 {
-        return Err(anyhow!("concurrent connections must be at least 1 (got 0)"));
-    }
-
-    let duration_secs = parse_duration(&args.duration_str)?;
-
-    let mut headers = Vec::new();
-    for header in &args.headers {
-        if let Some((name, value)) = header.split_once(':') {
-            headers.push((name.trim().to_string(), value.trim().to_string()));
-        } else {
-            eprintln!(
-                "Warning: Ignoring invalid header format: '{header}'. Expected 'Name: Value'."
-            );
-        }
-    }
-
-    if let Some(accept) = &args.accept {
-        let has_accept = headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("accept"));
-        if !has_accept {
-            headers.push(("Accept".to_string(), accept.clone()));
-        }
-    }
-
-    let body = match (&args.body, &args.body_file) {
-        (Some(content), _) => Some(content.clone()),
-        (None, Some(file_path)) => {
-            let content = fs::read_to_string(Path::new(file_path))
-                .with_context(|| format!("Failed to read body file: {file_path}"))?;
-            Some(content)
-        }
+    let sink = match out.output_format {
+        OutputFormat::Csv => Some(CsvSink::create(out.output_file.as_deref())?),
         _ => None,
     };
 
-    if body.is_some() {
-        let has_content_type = headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("content-type"));
-        if !has_content_type {
-            headers.push(("Content-Type".to_string(), args.content_type.clone()));
-        }
-    }
-
-    let basic_auth = args.basic_auth.as_ref().and_then(|auth_str| {
-        auth_str
-            .split_once(':')
-            .map(|(user, pass)| (user.to_string(), pass.to_string()))
-    });
-
-    let requests = if duration_secs > 0 {
-        0 // Duration overrides request count
-    } else {
-        // If no duration, ensure requests are at least concurrency to avoid deadlock.
-        args.requests.max(args.concurrent)
-    };
-
-    #[allow(deprecated)]
-    let config = TestConfig {
-        url: args.url.clone(),
-        method: args.method,
-        headers: headers.clone(),
-        body: body.clone(),
-        basic_auth: basic_auth.clone(),
-        duration: duration_secs,
-        requests,
-        concurrent: args.concurrent,
-        timeout: args.timeout,
-        rate_limit: args.rate_limit,
-        disable_compression: args.disable_compression,
-        disable_keepalive: args.disable_keepalive,
-        disable_redirects: args.disable_redirects,
-        interactive: !args.no_ui,
-        output_format: String::new(), // Deprecated field
-        content_type: args.content_type.clone(),
-        proxy: args.proxy.clone(),
-    };
-
-    if !args.no_ui {
-        let state = Arc::new(Mutex::new(TestState::new(&config)));
-        let shared_state = SharedState {
-            state: Arc::clone(&state),
+    let state = SharedState::default();
+    let sink = if interactive {
+        let options = ui::UiOptions {
+            color: !out.no_color,
+            fps: out.fps,
         };
-        let mut app = App::new(shared_state);
-
-        let config_clone = config.clone();
-        let state_clone = Arc::clone(&state);
-        tokio::spawn(async move {
-            let mut runner =
-                TestRunner::with_state(config_clone, SharedState { state: state_clone });
-            let _ = runner.start().await;
-        });
-
-        app.run()?;
+        ui::run(Arc::clone(&config), state.clone(), sink, options)?
     } else {
-        run_headless(config).await?;
+        run_headless(Arc::clone(&config), state.clone(), sink).await?
+    };
+    if let Some(sink) = sink {
+        sink.finish()?;
     }
-
-    Ok(())
+    write_report(
+        out.output_format,
+        &state.snapshot(),
+        &config,
+        out.output_file.as_deref(),
+    )
 }
 
-/// Headless mode: wait on lock-free metrics, then print a hey-style report.
-async fn run_headless(config: TestConfig) -> Result<()> {
-    let state = Arc::new(Mutex::new(TestState::new(&config)));
-    let mut runner = TestRunner::with_state(
-        config,
-        SharedState {
-            state: Arc::clone(&state),
-        },
-    );
-    let metrics = runner.metrics();
-
-    runner.start().await?;
-
-    let target = {
-        let g = state
-            .lock()
-            .map_err(|_| anyhow!("shared test state lock poisoned"))?;
-        g.target_requests
-    };
-    let mut last_printed = 0usize;
-    loop {
-        if metrics.metrics.is_complete() {
-            break;
+/// Run without the UI, showing progress on stderr. Ctrl-C stops the run and
+/// still prints the report.
+async fn run_headless(
+    config: Arc<TestConfig>,
+    state: SharedState,
+    sink: Option<CsvSink>,
+) -> Result<Option<CsvSink>> {
+    let stop = CancellationToken::new();
+    let ctrl_c = stop.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            ctrl_c.cancel();
         }
-        let n = metrics.metrics.completed_requests();
-        if target > 0 && n >= target {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            if metrics.metrics.is_complete() || metrics.metrics.completed_requests() >= target {
-                break;
-            }
-        }
-        if n != last_printed {
-            eprint!("\rRequests completed: {n}   ");
-            let _ = io::stderr().flush();
-            last_printed = n;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    });
+    let progress = io::stderr()
+        .is_terminal()
+        .then(|| spawn_progress(state.clone()));
+    let result = engine::run(config, state, stop, sink).await;
+    if let Some(p) = progress {
+        p.abort();
+        eprint!("\r\x1b[2K");
     }
-    eprintln!();
+    result
+}
 
-    let guard = state
-        .lock()
-        .map_err(|_| anyhow!("shared test state lock poisoned"))?;
-    print_hey_format_report(&mut io::stdout(), &guard)?;
-
-    Ok(())
+fn spawn_progress(state: SharedState) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let (done, rps) = {
+                let s = state.lock();
+                (s.completed, s.rps())
+            };
+            eprint!("\rRequests completed: {done} ({rps:.0} req/s)   ");
+            let _ = io::stderr().flush();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
 }

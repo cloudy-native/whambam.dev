@@ -1,281 +1,172 @@
-# Whambam 🚀
+# whambam
 
-An open-source, unobtrusive, lightning-fast CLI tool for HTTP(S) endpoint performance testing with a handy interactive terminal UI.
+Fast HTTP(S) load testing with a live terminal UI and hey-compatible flags.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 [![CI](https://github.com/cloudy-native/whambam.dev/actions/workflows/ci.yml/badge.svg)](https://github.com/cloudy-native/whambam.dev/actions/workflows/ci.yml)
 [![Release](https://github.com/cloudy-native/whambam.dev/actions/workflows/release.yml/badge.svg)](https://github.com/cloudy-native/whambam.dev/actions/workflows/release.yml)
 
-**Visit [whambam.dev](https://whambam.dev) for comprehensive documentation and examples.**
+**Documentation and examples: [whambam.dev](https://whambam.dev)**
 
-![Whambam Terminal UI](./docs/images/ui.png)
+![whambam demo](./docs/images/demo.gif)
 
-## Why Whambam?
+## Why whambam?
 
-```
-$ brew info hey
-==> hey: stable 0.1.4 (bottled)
-HTTP load generator, ApacheBench (ab) replacement
-https://github.com/rakyll/hey
-Deprecated because it is not maintained upstream! It will be disabled on 2026-01-12.
-```
+[hey](https://github.com/rakyll/hey) is no longer maintained. whambam picks up where it left off:
 
-The beloved HTTP testing tool [hey](https://github.com/rakyll/hey) is no longer maintained, leaving a gap in the developer toolkit. Whambam fills that void:
+- **hey-compatible flags** for the common cases (`-n -c -z -q -m -H -d -D -A -T -a -x -o csv`), so scripts keep working.
+- **A live dashboard**: throughput and latency on one timeline, percentiles, status codes and errors as they happen.
+- **Honest numbers**: HDR-histogram percentiles, end-to-end latency (through the last body byte), and `--qps` runs corrected for coordinated omission.
+- **Machine-readable output**: JSON summaries with a [published schema](schema/report.schema.json), and per-request CSV.
+- **One static binary** for macOS, Linux and Windows on x86_64 and ARM64. Written in Rust.
 
-- Has **Drop-in compatibility** with hey's command-line arguments
-- Adds **Modern interactive UI** with real-time metrics and charts
-- Is **Actively maintained** and receives continuous improvements
-- Is a **clean-room implementation** in Rust for reliability and performance
-
-Built with the same terminal-focused philosophy that made hey popular, and designed for the modern development workflow.
-
-## ✨ Key Features
-
-### Performance Testing
-- **Blazing fast** HTTP(S) endpoint testing
-- **Configurable concurrency** and request counts
-- **Rate limiting** for controlled load testing
-- **Multiple HTTP methods** (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE, CONNECT)
-- **Custom headers and authentication** support
-
-### Interactive Dashboard
-- **Real-time metrics** with live updates
-- **Combined throughput + latency chart** on the dashboard (shared time axis, dual scales)
-- **Full charts tab** for separate throughput and latency views
-- **Status code breakdown** with color-coded responses
-- **Multiple view modes** (Dashboard, Charts, Status Codes)
-
-### Developer Experience
-- **hey-compatible** command-line flags where it matters
-- **Interactive terminal UI** (default)
-- **Comprehensive error handling** and timeout controls
-- **Proxy support** for complex network setups
-
-## 📦 Installation
-
-### Homebrew (Recommended)
-```bash
-# Add tap and install
-brew tap cloudy-native/whambam
-brew install whambam
-
-# Or install directly
-brew install cloudy-native/whambam/whambam
-```
-
-### From Source
-```bash
-git clone https://github.com/cloudy-native/whambam.dev.git
-cd whambam.dev
-cargo build --release
-# binary at target/release/whambam
-```
-
-## 🚀 Quick Start
+## Install
 
 ```bash
-# Basic performance test
-whambam https://example.com
-
-# Custom configuration
-whambam https://example.com -n 1000 -c 20
-
-# POST request with JSON payload
-whambam https://api.example.com/users \
-  -m POST \
-  -d '{"name":"Test User"}' \
-  -H "Content-Type: application/json"
-
-# Time-limited test with rate limiting
-whambam https://example.com -z 30s -q 100 -c 10
-
-# Text report to stdout (no TUI; good for scripts)
-whambam https://example.com -n 200 -c 50 --no-ui
+brew install cloudy-native/whambam/whambam          # macOS and Linux
+cargo binstall whambam                              # prebuilt binary via cargo-binstall
+cargo install whambam                               # from source
+scoop install https://github.com/cloudy-native/whambam.dev/releases/latest/download/whambam.json   # Windows
 ```
 
-## 📖 Usage Reference
+Or download a binary, `.deb` or `.zip` from the [releases page](https://github.com/cloudy-native/whambam.dev/releases).
+
+## Quick start
 
 ```bash
-whambam <URL> [OPTIONS]
+whambam https://example.com                          # 200 requests, 50 workers, live UI
+whambam https://example.com -n 10k -c 100            # 10,000 requests
+whambam https://example.com -z 30s --qps 500         # 500 req/s for 30 s, latency corrected
+whambam https://api.example.com/users -m POST \
+  -d '{"name":"Ada"}' -T application/json            # POST a JSON body
+whambam https://example.com -z 10s --no-ui -o json --output report.json
+whambam https://example.com --debug                  # send one request and show it
 ```
 
-### Core Options
+When stdout is not a terminal (piped or redirected), whambam skips the UI and prints the report.
+
+## Options
+
+### Load
+
 | Option | Description | Default |
-|--------|-------------|---------|
-| `-n, --requests <N>` | Number of requests to send | 200 |
-| `-c, --concurrent <N>` | Concurrent connections | 50 |
-| `-z, --duration <TIME>` | Test duration (e.g., 30s, 5m, 1h); overrides `-n` | unlimited (`0`) |
-| `-t, --timeout <SEC>` | Request timeout in seconds (`0` = none) | 20 |
-| `-q, --rate-limit <QPS>` | Rate limit **per worker** (total ≈ QPS × concurrency) | unlimited (`0`) |
+|---|---|---|
+| `-n, --requests <N>` | Requests to send. Accepts `10k`, `1m`. `0` = until stopped. Ignored with `-z`. | 200 |
+| `-c, --concurrency <N>` | Workers (concurrent connections) | 50 |
+| `-z, --duration <TIME>` | Run for a time instead of a count: `30s`, `5m`, `1h`, `500ms` | – |
+| `-q, --rate-limit <QPS>` | Rate limit **per worker**, as in hey (total ≈ `-q` × `-c`) | unlimited |
+| `--qps <QPS>` | **Total** request rate, with latency corrected for coordinated omission | – |
+| `-t, --timeout <TIME>` | Per-request timeout (`0` = none) | 20s |
+| `-p, --http2-parallel <N>` | HTTP/2 streams per connection (needs `--http2`) | 1 |
 
-### HTTP Configuration
+### Request
+
 | Option | Description | Default |
-|--------|-------------|---------|
-| `-m, --method <METHOD>` | HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, …) | GET |
-| `-d, --body <BODY>` | Request body | - |
-| `-D, --body-file <FILE>` | Request body from file | - |
-| `-H, --header <HEADER>` | Custom headers (repeatable) | - |
-| `-A, --accept <HEADER>` | Accept header | - |
-| `-T, --content-type <TYPE>` | Content-Type header | text/html |
-| `-a, --auth <USER:PASS>` | Basic authentication | - |
+|---|---|---|
+| `-m, --method <METHOD>` | HTTP method | GET |
+| `-H, --header <H>` | Header, repeatable: `-H "X-Id: 1"` | – |
+| `-d, --body <BODY>` | Request body | – |
+| `-D, --body-file <FILE>` | Request body from a file (binary safe) | – |
+| `-A, --accept <TYPE>` | Accept header | – |
+| `-T, --content-type <TYPE>` | Content-Type, sent with a body | text/html |
+| `-a, --auth <USER:PASS>` | Basic authentication | – |
+| `--host <HOST>` | Override the Host header | – |
+| `-U, --user-agent <UA>` | User-Agent | whambam/&lt;version&gt; |
 
-### Network Options
+### Connection
+
 | Option | Description |
-|--------|-------------|
-| `-x, --proxy <HOST:PORT>` | HTTP proxy |
-| `--disable-compression` | Disable compression |
-| `--disable-keepalive` | Disable connection reuse |
-| `--disable-redirects` | Disable redirect following |
+|---|---|
+| `-x, --proxy <PROXY>` | Proxy as `host:port` or a URL (`http://`, `socks5://`) |
+| `--http2`, `--http-version <1.1\|2>` | Protocol (HTTP/2 uses prior knowledge on `http://`) |
+| `-k, --insecure` | Accept invalid TLS certificates |
+| `--cacert <PEM>` | Extra CA certificate to trust |
+| `--cert <PEM> --key <PEM>` | Client certificate for mutual TLS |
+| `--connect-timeout <TIME>` | Timeout for opening a connection |
+| `--connect-to <H:P:H2:P2>` | Send traffic for `H:P` to `H2:P2`, keeping the Host header and TLS name |
+| `-4, --ipv4` / `-6, --ipv6` | Resolve to one address family |
+| `--disable-keepalive` | New connection per request |
+| `--disable-compression` | Don't ask for gzip/brotli/deflate/zstd |
+| `--disable-redirects`, `-r, --redirect <N>` | Redirect limit (default 10) |
 
-### Output Options
-| Option | Description |
-|--------|-------------|
-| `--no-ui` | Disable interactive UI; print **hey-inspired, accuracy-first** text summary to stdout |
+### Output
 
-Progress while running goes to **stderr**; the final report goes to **stdout** (safe to redirect).
+| Option | Description | Default |
+|---|---|---|
+| `--no-ui` (alias `--no-tui`) | No interactive UI; progress on stderr, report on stdout | off |
+| `-o, --output-format <FMT>` | `text`, `json`, `csv` (one row per request) or `quiet` | text |
+| `--output <FILE>` | Write the report to a file instead of stdout | stdout |
+| `--debug` | Send one request, print the request and response, exit | – |
+| `--no-color` | No colors (also honours `NO_COLOR`) | – |
+| `--fps <N>` | UI refresh rate | 10 |
+
+## Differences from hey
+
+- **`-q` keeps hey's meaning** (per worker). For a target total rate use `--qps`, which also corrects for coordinated omission: each request is timed from when it was *due*, so a server stall shows up in the percentiles instead of hiding in fewer requests.
+- **Latency is end to end**: from sending the request to reading the last byte of the body.
+- **No per-phase breakdown** (DNS, dial, write, wait). whambam doesn't measure those phases, so it doesn't print guesses.
+- **Success** means a status below 400. Transport errors are grouped by kind (timeout, DNS, refused, TLS, …) instead of being printed one per line.
+- **JSON output** is new; `-o csv` columns are `offset_s,latency_ms,status,error,bytes_received`.
+
+## Interactive UI
+
+| Key | Action |
+|---|---|
+| `1` `2` `3`, `←` `→`, `Tab` | Dashboard · Charts · Status & errors |
+| `r` | Run the same test again (after it finishes) |
+| `h`, `?` | Help |
+| `q`, `Esc`, `Ctrl-C` | Quit and print the report |
+
+## Try it locally
 
 ```bash
-whambam http://localhost:8080 -z 10s -c 50 --no-ui
-whambam http://localhost:8080 -z 10s -c 50 --no-ui > report.txt
-```
-
-### Text report (`--no-ui`): accuracy over hey layout
-
-`--no-ui` prints a **hey-inspired** text summary, but **measurement accuracy wins over matching hey’s layout or numbers**.
-
-| Section | What whambam reports |
-|--------|----------------------|
-| **Total / RPS / Total data / Size/request** | From completed requests and wall time |
-| **Fastest / Slowest** | Observed min/max end-to-end latency |
-| **Average** | **True mean** of all samples (HDR histogram mean), not a percentile blend |
-| **Response time histogram** | **Real sample counts** from the HDR histogram (linear buckets) |
-| **Latency distribution (10%…99%)** | HDR quantiles of those same samples |
-| **Status codes** | Observed response codes |
-| **DNS / dial / req write / resp wait / resp read** | **Omitted** — we do not instrument those phases (hey prints them; we refuse placeholders) |
-
-**Latency definition:** each sample is **end-to-end** — request start through full response body download (not TTFB-only).
-
-Compared to hey under the same flags:
-
-- RPS and total request counts can differ (client stack, pooling, duration drain). Compare on equal footing with a warm server.
-- whambam’s **Total** usually tracks `-z` closely; hey often reports a slightly longer wall time while finishing in-flight work.
-- Prefer whambam’s **average**, **histogram**, and **percentiles** when the two tools disagree on distribution shape.
-
-For live dual-axis charts, use the default TUI (omit `--no-ui`).
-
-## 🎯 Interactive UI Guide
-
-### Navigation
-- **`1`, `2`, `3`**: Switch between Dashboard, Charts, and Status Codes tabs
-- **`h` or `?`**: Toggle help overlay
-- **`r`**: Restart the test (after completion)
-- **`Ctrl-C`, `q`, or `ESC`**: Exit application
-
-### Dashboard Tab
-Real-time performance metrics including:
-- **Throughput**: Current and overall requests per second
-- **Success Rate**: Percentage of successful requests
-- **Response Times**: Min, max, and percentile latency (p50–p99)
-- **Combined chart**: Throughput (req/s, left) and latency (ms, right) on one shared timeline
-
-### Charts Tab
-Full-screen visualization of:
-- **Throughput over time**
-- **Latency over time**
-
-### Status Codes Tab
-Detailed breakdown of HTTP responses:
-- **Color-coded by status class** (2xx, 3xx, 4xx, 5xx)
-- **Percentage distribution**
-- **Real-time updates**
-
-## 🧪 Local Testing Setup
-
-Quickly test your installation with a local HTTP server. Python’s built-in server works on macOS, Linux, and Windows without extra packages:
-
-```bash
-# Terminal 1 — serve the current directory on port 8080
-python3 -m http.server 8080
-
-# Terminal 2 — load-test it
-whambam http://localhost:8080 -n 100 -c 10
-
-# Or run for a fixed duration
+python3 -m http.server 8080                 # any local server works
 whambam http://localhost:8080 -z 10s -c 50
 ```
 
-`python3` ships with macOS (and most Linux distros). No Node/`http-server` install required.
+The repo also has a demo server with realistic, wave-shaped latency (it's what the GIF above uses):
 
-## 🏗️ Architecture
+```bash
+cargo run --release -p test-utils --bin demo-server -- 8080
+```
+
+## Architecture
 
 ```
 src/
-├── main.rs                 # CLI parsing and application entry point
-├── lib.rs                  # Library entry (shared args / run)
-├── tester/
-│   ├── unified_runner.rs   # Async worker pool + HTTP client
-│   ├── metrics.rs          # Lock-free metrics collection
-│   └── types.rs            # Config, request metrics, shared UI state
-├── ui/
-│   ├── app.rs              # Terminal UI application logic
-│   └── widgets.rs          # Dashboard, charts, status widgets
-└── tests/                  # Unit and integration tests
+├── main.rs        entry point
+├── lib.rs         run(): debug, UI or headless mode, then the report
+├── cli/           clap flags (load, request, connection, output) and value parsers
+├── config/        validated TestConfig: request spec, network settings, pacing
+├── http/          reqwest clients, DNS resolver (--connect-to, -4/-6), request execution, error kinds, --debug
+├── engine/        workers, shared schedule (request budget, deadlines, rate pacing)
+├── stats/         live TestState: HDR histogram, status/error counts, chart series
+├── report/        Report model → text, JSON; streaming CSV
+└── ui/            ratatui dashboard, charts, status & errors
+test-utils/        HTTP/1.1 + h2c mock server for tests, demo server for recordings
+schema/            JSON schema for -o json
+packaging/         Homebrew formula and Scoop manifest renderer
 ```
 
-## 🤖 AI-Powered Development
-
-This project was built in collaboration with [Claude Code](https://www.anthropic.com/claude-code), demonstrating effective AI-assisted development practices:
-
-### Key Learnings
-1. **Always start with a plan** - Get AI to outline the approach before letting it write a line of code
-2. **Make incremental changes** - Small, testable steps prevent large rollbacks
-3. **Write tests eagerly** - Add comprehensive tests before major refactoring
-4. **Leverage AI for systemic changes** - AI excels at large-scale code transformations
-5. **Iterate and improve** - Don't hesitate to ask AI to fix its own mistakes
-
-### Development Stats
-- **Total AWS Bedrock cost**: $34.92
-- **AWS Bedrock model used**: `us.anthropic.claude-3-7-sonnet-20250219-v1:0`
-- **Code split**: ~30% human-written structure, ~70% AI-generated implementation
-- **Test coverage**: Comprehensive suite with AI-generated tests
-
-## 📦 Releasing
-
-Releases are managed with [`cargo-release`](https://github.com/crate-ci/cargo-release):
+## Development
 
 ```bash
-cargo install cargo-release
-
-# Dry run first
-cargo release patch --dry-run
-
-# Cut a release (patch/minor/major)
-cargo release patch
+cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+demo/record.sh     # re-record docs/images/demo.gif with vhs
 ```
 
-This bumps the version, tags, and pushes. CI then cross-compiles for 6 targets, creates a GitHub Release with checksums, and updates the Homebrew tap automatically.
+Releases build natively on GitHub-hosted runners for macOS, Linux (glibc and static musl) and Windows, each on x86_64 and ARM64. See [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
-See [Contributing Guidelines](CONTRIBUTING.md#releasing) for full details.
+## Contributing
 
-## 🤝 Contributing
+Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-We welcome contributions! Here's how to get started:
+## License
 
-1. **Fork the repository**
-2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Make your changes** with tests
-4. **Run the test suite** (`cargo test`)
-5. **Submit a pull request**
+MIT; see [LICENSE](LICENSE).
 
-Please read our [Contributing Guidelines](CONTRIBUTING.md) for detailed information.
+## Acknowledgments
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Inspired by the excellent [hey](https://github.com/rakyll/hey) tool
-- Built with [Claude Code](https://www.anthropic.com/claude-code) AI assistance
-- Thanks to the Rust community for excellent libraries, tools, and ecosystem 
+- Inspired by [hey](https://github.com/rakyll/hey).
+- Built with [Claude Code](https://www.anthropic.com/claude-code); see [how](CONTRIBUTING.md#ai-assisted-development).

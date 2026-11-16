@@ -1,212 +1,197 @@
 name: Release
 
+# Each target builds natively on a runner of its own OS and CPU architecture
+# (no cross-compiling), then one job publishes the GitHub release.
+#
+# Optional publishing jobs are off until you turn them on with repository
+# variables (Settings → Secrets and variables → Actions → Variables):
+#   HOMEBREW_TAP_ENABLED=true  + secret HOMEBREW_TAP_TOKEN
+#   CRATES_IO_ENABLED=true     + secret CARGO_REGISTRY_TOKEN
+#   WINGET_ENABLED=true        + secret WINGET_TOKEN (first version must be submitted by hand)
+
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g., v0.2.0)"
+        description: "Release tag (e.g. v1.1.0)"
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
 
 env:
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
-  test:
-    name: Test before release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --verbose
+  check:
+    uses: ./.github/workflows/ci.yml
 
-  build:
-    name: Build
-    needs: test
-    strategy:
-      matrix:
-        target:
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-          - aarch64-unknown-linux-musl
-        include:
-          - target: x86_64-apple-darwin
-            os: macos-13
-          - target: aarch64-apple-darwin
-            os: macos-14
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+  # ---- Linux -------------------------------------------------------------
+  linux-x86_64-gnu:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: x86_64-unknown-linux-gnu
+      runner: ubuntu-24.04
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      deb: true
 
-    runs-on: ${{ matrix.os }}
+  linux-aarch64-gnu:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: aarch64-unknown-linux-gnu
+      runner: ubuntu-24.04-arm
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      deb: true
 
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+  linux-x86_64-musl:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: x86_64-unknown-linux-musl
+      runner: ubuntu-24.04
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      musl: true
 
-      - name: Build
-        if: ${{ matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'x86_64-unknown-linux-musl' && matrix.target != 'aarch64-unknown-linux-musl' }}
-        run: cargo build --release --target ${{ matrix.target }}
+  linux-aarch64-musl:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: aarch64-unknown-linux-musl
+      runner: ubuntu-24.04-arm
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      musl: true
 
-      - name: Install aarch64 cross-compiler (Linux)
-        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+  # ---- macOS -------------------------------------------------------------
+  macos-x86_64:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: x86_64-apple-darwin
+      runner: macos-15-intel
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
 
-      - name: Build (aarch64-unknown-linux-gnu)
-        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --target ${{ matrix.target }}
+  macos-aarch64:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: aarch64-apple-darwin
+      runner: macos-15
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
 
-      - name: Install cargo-deb (GNU Linux targets)
-        if: ${{ endsWith(matrix.target, '-unknown-linux-gnu') }}
-        run: cargo install cargo-deb --locked
+  # ---- Windows -----------------------------------------------------------
+  windows-x86_64:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: x86_64-pc-windows-msvc
+      runner: windows-2025
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      archive: zip
 
-      - name: Build .deb package (GNU Linux targets)
-        if: ${{ endsWith(matrix.target, '-unknown-linux-gnu') }}
-        run: cargo deb --no-build --target ${{ matrix.target }}
+  windows-aarch64:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      target: aarch64-pc-windows-msvc
+      runner: windows-11-arm
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      archive: zip
 
-      - name: Setup Zig (for musl static builds)
-        if: ${{ startsWith(matrix.target, 'x86_64-unknown-linux-musl') || startsWith(matrix.target, 'aarch64-unknown-linux-musl') }}
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.12.0
-
-      - name: Install cargo-zigbuild
-        if: ${{ startsWith(matrix.target, 'x86_64-unknown-linux-musl') || startsWith(matrix.target, 'aarch64-unknown-linux-musl') }}
-        run: cargo install cargo-zigbuild --locked
-
-      - name: Build (musl static)
-        if: ${{ startsWith(matrix.target, 'x86_64-unknown-linux-musl') || startsWith(matrix.target, 'aarch64-unknown-linux-musl') }}
-        run: cargo zigbuild --release --target ${{ matrix.target }}
-
-      - name: Package
-        run: |
-          mkdir -p whambam-${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/whambam whambam-${{ matrix.target }}/
-          tar -czf whambam-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz -C whambam-${{ matrix.target }} whambam
-          shasum -a 256 whambam-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz > whambam-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz.sha256
-
-      - name: Package .deb and checksum (GNU Linux targets)
-        if: ${{ endsWith(matrix.target, '-unknown-linux-gnu') }}
-        run: |
-          DEB_FILE=$(ls target/${{ matrix.target }}/debian/*.deb | head -n1)
-          echo "Using $DEB_FILE"
-          shasum -a 256 "$DEB_FILE" > "$DEB_FILE.sha256"
-
-      - name: Upload .deb artifact (GNU Linux targets)
-        if: ${{ endsWith(matrix.target, '-unknown-linux-gnu') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: whambam-deb-${{ matrix.target }}
-          path: |
-            target/${{ matrix.target }}/debian/*.deb
-            target/${{ matrix.target }}/debian/*.deb.sha256
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: whambam-${{ matrix.target }}
-          path: |
-            whambam-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz
-            whambam-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz.sha256
-
+  # ---- Publish -----------------------------------------------------------
   release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-
+    name: GitHub release
+    needs:
+      - linux-x86_64-gnu
+      - linux-aarch64-gnu
+      - linux-x86_64-musl
+      - linux-aarch64-musl
+      - macos-x86_64
+      - macos-aarch64
+      - windows-x86_64
+      - windows-aarch64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Render package manifests
+        run: packaging/render-manifests.sh "$RELEASE_TAG" dist manifests
+      - name: Combined checksums
+        working-directory: dist
+        run: cat *.sha256 > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
           files: |
-            artifacts/*/whambam-*.tar.gz
-            artifacts/*/whambam-*.tar.gz.sha256
-            artifacts/*/*.deb
-            artifacts/*/*.deb.sha256
+            dist/*
+            manifests/whambam.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifests
+          path: manifests/*
 
-  update-homebrew:
-    name: Update Homebrew Formula
+  homebrew:
+    name: Update Homebrew tap
     needs: release
-    runs-on: ubuntu-latest
-
+    if: vars.HOMEBREW_TAP_ENABLED == 'true'
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout homebrew tap
-        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: manifests
+          path: manifests
+      - uses: actions/checkout@v4
         with:
           repository: cloudy-native/homebrew-whambam
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
-
-      - name: Get release info and update formula
+          path: tap
+      - name: Commit formula
         run: |
-          VERSION=${RELEASE_TAG#v}
-
-          # Get SHA256 checksums from the release
-          ARM_SHA=$(curl -sL "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-aarch64-apple-darwin.tar.gz" | shasum -a 256 | cut -d' ' -f1)
-          INTEL_SHA=$(curl -sL "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-x86_64-apple-darwin.tar.gz" | shasum -a 256 | cut -d' ' -f1)
-
-          # Update the formula
-          cat > homebrew-tap/Formula/whambam.rb << EOF
-          class Whambam < Formula
-            desc "whambam: a simple CLI tool for web performance testing"
-            homepage "https://github.com/cloudy-native/whambam.dev"
-            license "MIT"
-            head "https://github.com/cloudy-native/whambam.dev.git", branch: "main"
-            
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-aarch64-apple-darwin.tar.gz"
-                sha256 "${ARM_SHA}"
-              else
-                url "https://github.com/cloudy-native/whambam.dev/releases/download/v${VERSION}/whambam-v${VERSION}-x86_64-apple-darwin.tar.gz"
-                sha256 "${INTEL_SHA}"
-              end
-            end
-            
-            def install
-              bin.install "whambam"
-            end
-            
-            test do
-              system "#{bin}/whambam", "--version"
-            end
-          end
-          EOF
-
-      - name: Commit and push formula update
-        run: |
-          cd homebrew-tap
+          cp manifests/whambam.rb tap/Formula/whambam.rb
+          cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/whambam.rb
-          git commit -m "Update whambam to ${RELEASE_TAG#v}"
+          git commit -m "whambam ${RELEASE_TAG#v}"
           git push
+
+  crates-io:
+    name: Publish to crates.io
+    needs: release
+    if: vars.CRATES_IO_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  winget:
+    name: Submit to winget
+    needs: release
+    if: vars.WINGET_ENABLED == 'true'
+    runs-on: windows-2025
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: CloudyNative.Whambam
+          release-tag: ${{ env.RELEASE_TAG }}
+          installers-regex: '-pc-windows-msvc\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

@@ -31,18 +31,14 @@ Here's our design and implementation focus.
 
 # Install
 
-If you're on a Mac and using homebrew, just do this.
-
 ```bash
-brew tap cloudy-native/whambam
-brew install whambam
+brew install cloudy-native/whambam/whambam          # macOS and Linux
+cargo binstall whambam                              # prebuilt binary via cargo-binstall
+cargo install whambam                               # from source
+scoop install https://github.com/cloudy-native/whambam.dev/releases/latest/download/whambam.json   # Windows
 ```
 
-If you're not using homebrew, this is your chance and it will definitely be worth your while. Follow instructions at [brew.sh](https://brew.sh).
-
-Linux releases are available at [GitHub releases](https://github.com/cloudy-native/whambam.dev/releases) in tarballs and Debian packages. Requests for alternative packaging are welcome.
-
-_Windows releases are coming soon!_
+Every [GitHub release](https://github.com/cloudy-native/whambam.dev/releases) has binaries for macOS, Linux (glibc and static musl) and Windows, each on x86_64 and ARM64, plus Debian packages and SHA-256 checksums.
 
 # Usage
 
@@ -54,51 +50,78 @@ whambam -z 10s https://example.com
 
 Will pummel `https://example.com` for 10 seconds with the default 50 concurrent connections.
 
-## Core Options
+## Load Options
 
-| Option                     | Description                          | Default   | Examples & Explanation                                                                 |
-|----------------------------|--------------------------------------|-----------|-----------------------------------------------------------------------------------------|
-| `-n, --requests <N>`       | Number of requests to send           | 200       | `-n 1000` sends exactly 1000 requests. When `-z` is set, `-n` is ignored (a note is printed). |
-| `-c, --concurrent <N>`     | Concurrent connections               | 50        | `-c 100` uses 100 concurrent workers/connections.                            |
-| `-z, --duration <TIME>`    | Test duration (e.g., 30s, 5m, 1h)    | unlimited (`0`) | `-z 1m` runs about one minute. Takes precedence over `-n`.                  |
-| `-t, --timeout <SEC>`      | Request timeout in seconds           | 20        | `-t 5` aborts any request that takes longer than 5 seconds. Use `0` for no timeout. |
-| `-q, --rate-limit <QPS>`   | Rate limit **per worker** (QPS)      | unlimited (`0`) | `-q 100` aims for ~100 requests/sec **per concurrent worker**. Total ≈ `-q` × `-c`. |
+| Option | Description | Default | Examples & Explanation |
+|---|---|---|---|
+| `-n, --requests <N>` | Number of requests to send | 200 | `-n 10k` sends exactly 10,000 requests (`k` and `m` suffixes work). `-n 0` runs until you stop it. Ignored when `-z` is set. |
+| `-c, --concurrency <N>` | Workers (concurrent connections) | 50 | `-c 100` uses 100 workers. `--concurrent` also works. |
+| `-z, --duration <TIME>` | Run for a time instead of a count | – | `-z 1m`, `-z 30s`, `-z 500ms`. Takes precedence over `-n`. |
+| `-t, --timeout <TIME>` | Per-request timeout | 20s | `-t 5` or `-t 500ms`. `0` means no timeout. |
+| `-q, --rate-limit <QPS>` | Rate limit **per worker**, as in hey | unlimited | `-q 100` aims for ~100 requests/sec **per worker**. Total ≈ `-q` × `-c`. |
+| `--qps <QPS>` | **Total** request rate, latency corrected | – | `--qps 500` schedules 500 requests/sec across all workers and times each request from when it was due. See below. |
+| `-p, --http2-parallel <N>` | HTTP/2 streams per connection | 1 | `--http2 -c 4 -p 10` runs 40 workers over 4 connections. |
 
-## HTTP Configuration
+### Rate limits and coordinated omission
 
-| Option                      | Description                                                                 | Default   | Examples & Explanation                                                                 |
-|-----------------------------|-----------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------|
-| `-m, --method <METHOD>`     | HTTP method (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`, `TRACE`, `CONNECT`) | GET | `-m POST` sends a POST request. Usually used with `-d` or `-D`. |
-| `-d, --body <BODY>`         | Request body                                                                | -         | `-d '{"key":"value"}'` sends the given JSON string as the request body.              |
-| `-D, --body-file <FILE>`    | Request body from file                                                      | -         | `-D /path/to/body.json` sends the contents of the file as the request body.            |
-| `-H, --header <HEADER>`     | Custom headers (repeatable)                                                 | -         | `-H 'X-My-Header: 123' -H 'User-Agent: whambam'`                                       |
-| `-A, --accept <HEADER>`     | Accept header                                                               | -         | `-A 'application/json'` sets the Accept header.                                        |
-| `-T, --content-type <TYPE>` | Content-Type header                                                         | text/html | `-T 'application/json'`. Important when sending a request body.                        |
-| `-a, --auth <USER:PASS>`    | Basic authentication                                                        | -         | `-a admin:s3cr3t` sends an Authorization header with the credentials.                  |
+With `-q`, each worker waits for its next tick, sends, and waits for the response, just like hey. If the server stalls, workers send fewer requests, and the slow period is under-represented in the results. This is called *coordinated omission*.
 
-## Network Options
+With `--qps`, requests are scheduled at a fixed total rate. If every worker is busy when a request is due, it waits, and that wait is **included** in its latency. Percentiles then show what real clients arriving at that rate would have seen. The report says when latencies are corrected.
 
-| Option                        | Description                    | Examples & Explanation                                                          |
-|-------------------------------|--------------------------------|----------------------------------------------------------------------------------|
-| `-x, --proxy <HOST:PORT>`     | HTTP proxy                     | `-x http://127.0.0.1:8080` routes all requests through the specified proxy.     |
-| `--disable-compression`       | Disable compression            | Prevents whambam from requesting compressed responses (e.g., gzip).             |
-| `--disable-keepalive`         | Disable connection reuse       | Forces a new TCP connection for each request. Simulates clients without keep-alive. |
-| `--disable-redirects`         | Disable redirect following     | If the server returns a 3xx redirect, whambam will not follow it.               |
+## Request Options
+
+| Option | Description | Default | Examples & Explanation |
+|---|---|---|---|
+| `-m, --method <METHOD>` | HTTP method | GET | `-m POST`. Any valid method token is accepted. |
+| `-d, --body <BODY>` | Request body | – | `-d '{"key":"value"}'` |
+| `-D, --body-file <FILE>` | Request body from a file | – | `-D body.json`. Binary files are sent unchanged. |
+| `-H, --header <HEADER>` | Custom header (repeatable) | – | `-H 'X-My-Header: 123' -H 'Authorization: Bearer abc'` |
+| `-A, --accept <TYPE>` | Accept header | – | `-A 'application/json'` |
+| `-T, --content-type <TYPE>` | Content-Type, sent with a body | text/html | `-T 'application/json'` |
+| `-a, --auth <USER:PASS>` | Basic authentication | – | `-a admin:s3cr3t` |
+| `--host <HOST>` | Override the Host header | – | `--host api.internal` |
+| `-U, --user-agent <UA>` | User-Agent | whambam/&lt;version&gt; | `-U 'Mozilla/5.0'` |
+
+## Connection Options
+
+| Option | Description | Examples & Explanation |
+|---|---|---|
+| `-x, --proxy <PROXY>` | Proxy | `-x 127.0.0.1:3128` or `-x socks5://127.0.0.1:1080` |
+| `--http2` / `--http-version 2` | Use HTTP/2 | Uses ALPN on `https://` and prior knowledge (h2c) on `http://`. |
+| `-k, --insecure` | Accept invalid TLS certificates | For self-signed test servers. |
+| `--cacert <PEM>` | Extra CA certificate | Trusted in addition to the system store. |
+| `--cert <PEM> --key <PEM>` | Client certificate (mutual TLS) | Both are required together. |
+| `--connect-timeout <TIME>` | Connection timeout | `--connect-timeout 2s` |
+| `--connect-to <H:P:H2:P2>` | Redirect a host and port | `--connect-to example.com:443:10.0.0.5:8443` tests one backend while keeping the Host header and TLS name. |
+| `-4, --ipv4` / `-6, --ipv6` | Address family | Resolve names to IPv4 or IPv6 addresses only. |
+| `--disable-compression` | Disable compression | Don't request gzip, brotli, deflate or zstd. |
+| `--disable-keepalive` | Disable connection reuse | A new connection for each request. |
+| `--disable-redirects` / `-r, --redirect <N>` | Redirect limit | Default 10. `--disable-redirects` is `-r 0`. |
 
 ## Output Options
 
-| Option    | Description                                                                 | Default |
-|-----------|-----------------------------------------------------------------------------|---------|
-| `--no-ui` | Disable the interactive UI and print a **hey-inspired, accuracy-first** text summary to stdout | off |
+| Option | Description | Default |
+|---|---|---|
+| `--no-ui` (alias `--no-tui`) | No interactive UI | off |
+| `-o, --output-format <FMT>` | `text`, `json`, `csv` or `quiet` | text |
+| `--output <FILE>` | Write the report to a file | stdout |
+| `--debug` | Send one request and print the request and response | – |
+| `--no-color` | No colors (also honours `NO_COLOR`) | – |
+| `--fps <N>` | UI refresh rate | 10 |
 
-Progress while the test runs is written to **stderr**; the final Summary / histogram / latency distribution / status codes go to **stdout** so you can pipe or capture them cleanly.
+Progress while the test runs is written to **stderr**; the report goes to **stdout** so you can pipe or capture it cleanly. When stdout isn't a terminal, whambam skips the UI automatically. After you quit the UI, the report is printed too.
 
 ```bash
 whambam https://example.com -n 200 -c 50 --no-ui
 whambam https://example.com -z 10s -c 50 --no-ui > report.txt
+whambam https://example.com -z 10s -o json --output report.json
+whambam https://example.com -n 1k -o csv --output requests.csv
 ```
 
-### Text report accuracy (`--no-ui`)
+- **JSON** is a summary: target, load settings, totals, latency statistics and percentiles, histogram, status codes and errors by kind. The shape is defined by a [JSON schema](https://github.com/cloudy-native/whambam.dev/blob/main/schema/report.schema.json).
+- **CSV** has one row per request: `offset_s,latency_ms,status,error,bytes_received`. With the UI running, CSV needs `--output FILE`.
+
+### Text report accuracy
 
 The report is **hey-inspired** for familiarity, but **accuracy is preferred over matching hey’s layout or numbers**.
 
@@ -106,71 +129,68 @@ The report is **hey-inspired** for familiarity, but **accuracy is preferred over
 |--------|--------------------|
 | Average | **True mean** of all latency samples (HDR histogram mean) |
 | Histogram | **Real sample counts** from the HDR histogram (linear buckets) |
-| Latency 10%…99% | HDR quantiles of those samples |
+| Latency 10%…99.9% | HDR quantiles of those samples |
 | Fastest / Slowest | Observed min / max |
+| Success rate | Responses with status below 400 |
 | RPS, Total data, Size/request | Completed requests, wall time, byte counters |
 | Status codes | Observed codes |
+| Error distribution | Transport errors grouped by kind: timeout, dns, connection refused, connection closed, tls, … |
 
 **Omitted on purpose:** hey’s “Details” block (DNS+dialup, DNS-lookup, req write, resp wait, resp read). whambam does not instrument those phases and will not invent placeholders.
 
-**Latency definition:** end-to-end — from request start through full response body download (not headers-only / TTFB).
+**Latency definition:** end-to-end, from request start through full response body download (not headers-only / TTFB).
 
-**Vs hey under the same flags:** RPS and total counts can still differ (HTTP stack, pooling, duration drain). Prefer whambam’s average, histogram, and percentiles when comparing distribution quality. Total time usually tracks `-z` closely; hey often runs slightly longer while draining.
+## Debugging a request
 
-For live dual-axis charts, use the default UI (omit `--no-ui`).
+`--debug` sends a single request and prints both sides, which is handy for checking headers, auth and bodies before a long run:
+
+```bash
+whambam https://httpbin.org/post -m POST -d '{"a":1}' -T application/json --debug
+```
 
 ## Local testing
 
-You do not need Node’s `http-server` (which is awkward to install on modern macOS). Use Python’s built-in server instead—it is available on macOS, Linux, and Windows:
+You do not need Node’s `http-server`. Python’s built-in server works on macOS, Linux and Windows:
 
 ```bash
-# Terminal 1 — serve the current directory on port 8080
+# Terminal 1: serve the current directory on port 8080
 python3 -m http.server 8080
 
-# Terminal 2 — load-test it
+# Terminal 2: load-test it
 whambam http://localhost:8080 -n 100 -c 10
-
-# Or run for a fixed duration
-whambam http://localhost:8080 -z 10s -c 50
 ```
 
 ## Interactive UI Guide
 
-The interactive UI provides real-time feedback on your load test. Use these keys to navigate:
+The interactive UI gives real-time feedback on your load test. Use these keys to navigate:
 
 ### Navigation
 
-- `1`, `2`, `3`: Switch between Dashboard, Charts, and Status Codes tabs
-- `h` or `?`: Toggle help overlay
-- `r`: Restart the test after it completes
-- `Ctrl-C`, `q`, or `ESC`: Exit application
+- `1`, `2`, `3`, `←`/`→` or `Tab`: switch between Dashboard, Charts, and Status & errors
+- `h` or `?`: toggle help
+- `r`: run the same test again after it completes
+- `q`, `Esc` or `Ctrl-C`: quit and print the report
+
+The header shows the URL, elapsed time, progress, and the load settings (workers, HTTP version, pacing).
 
 ### Dashboard Tab
 
 ![Dashboard tab](/images/ui-tab-1.png)
 
-Real-time performance metrics including:
-
-- Throughput: Current and overall requests per second
-- Success Rate: Percentage of successful requests
-- Response Times: Min, max, and percentile latency (p50–p99)
-- Combined chart: Throughput (req/s, left scale) and latency (ms, right scale) on one shared timeline, so spikes line up for correlation
+- Throughput: requests, success rate, failures, current and overall requests per second
+- Latency: fastest, p50, p90, p99, slowest, mean and standard deviation
+- Data: bytes received and sent, per-request sizes, transport errors
+- Combined chart: throughput (left scale) and mean latency (right scale) on one timeline, so spikes line up
 
 ### Charts Tab
 
 ![Charts tab](/images/ui-tab-2.png)
 
-Full-screen visualization of:
+Full-size throughput and mean-latency charts, sampled every 100 ms.
 
-- Throughput over time (with last / overall summary in the title)
-- Latency over time (with last / average summary in the title)
+### Status & Errors Tab
 
-### Status Codes Tab
+![Status and errors tab](/images/ui-tab-3.png)
 
-![Status Codes tab](/images/ui-tab-3.png)
-
-Detailed breakdown of HTTP responses:
-
-- Color-coded by status class (2xx, 3xx, 4xx, 5xx)
-- Percentage distribution
-- Real-time updates
+- HTTP status codes, color-coded by class (2xx, 3xx, 4xx, 5xx), with counts and shares
+- Transport errors by kind, with counts and shares
