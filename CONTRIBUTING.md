@@ -140,7 +140,7 @@ These jobs are off until you set a repository variable to `true` (Settings → S
 | `CRATES_IO_ENABLED` | `CARGO_REGISTRY_TOKEN` | `cargo publish` (enables `cargo install` and `cargo binstall`) |
 | `WINGET_ENABLED` | `WINGET_TOKEN` | Opens a winget-pkgs PR. The first version must be submitted by hand with `wingetcreate new`. |
 
-Publishing a release also triggers the [action self-test](.github/workflows/action-test.yml), which runs `action.yml` against the new release on Linux (x86_64, ARM64), macOS and Windows. After a release, move the floating major tag (`v1`) to it so `uses: cloudy-native/whambam.dev@v1` picks up the new version.
+The release workflow ends with the [action self-test](.github/workflows/action-test.yml), which runs `action.yml` against the new release on Linux (x86_64, ARM64), macOS and Windows. After a release, move the floating major tag (`v1`) to it so `uses: cloudy-native/whambam.dev@v1` picks up the new version.
 
 The formula and Scoop manifest come from [`packaging/render-manifests.sh`](packaging/render-manifests.sh), which you can run locally against a folder of release archives.
 

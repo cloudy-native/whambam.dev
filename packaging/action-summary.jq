@@ -1,10 +1,15 @@
-# Markdown job summary for the whambam GitHub Action, from `-o json`.
+# The whambam GitHub Action's output from `-o json`: with --arg out summary, a Markdown job summary;
+# with --arg out annotations, one ::error:: workflow command per failed check.
 def r2: . * 100 | round / 100;
 def ms: if . >= 1000 then "\(. / 1000 | r2) s" else "\(r2) ms" end;
 def fmt($m): if $m == "rps" then "\(r2) req/s"
   elif ($m == "success" or $m == "errors") then "\(r2)%"
   else ms end;
 
+if $out == "annotations" then
+  (.assertions // [])[] | select(.passed | not) | .metric as $m |
+  "::error title=whambam check failed::\(.assertion): actual \(.actual | fmt($m)), limit \(.threshold | fmt($m)) (\($url))"
+else
 "## whambam: \($url)",
 "",
 "| | |",
@@ -23,3 +28,4 @@ def fmt($m): if $m == "rps" then "\(r2) req/s"
   "", "### Checks", "",
   (.assertions[] | .metric as $m | "- \(if .passed then "✅" else "❌" end) `\(.assertion)`: actual \(.actual | fmt($m)), limit \(.threshold | fmt($m))")
  else empty end)
+end
