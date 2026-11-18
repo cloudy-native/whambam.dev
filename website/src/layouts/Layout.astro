@@ -52,7 +52,7 @@ const year = new Date().getFullYear();
     <main class="container mx-auto max-w-7xl flex-grow px-6 pt-16">
       <slot />
     </main>
-    <footer class="flex w-full items-center justify-center py-6 text-sm text-muted">
+    <footer class="flex w-full flex-col items-center justify-center py-6 text-sm text-muted">
       <p class="flex flex-wrap items-center justify-center gap-1 px-4 text-center">
         Copyright &copy; {year}, whambam.dev. Made with ❤️ by Stephen Harrison
         <a
@@ -76,6 +76,9 @@ const year = new Date().getFullYear();
           </svg>
         </a>
         .
+      </p>
+      <p class="mt-1 px-4 text-center">
+        More projects at{" "}<a href={siteConfig.links.portfolio} class="underline hover:text-foreground">dinsor.org</a>
       </p>
     </footer>
   </body>

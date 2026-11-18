@@ -1,0 +1,130 @@
+---
+// Install instructions, one tab per platform. The visitor's OS is selected
+// on load; without JavaScript the first tab shows.
+import { siteConfig } from "../config/site";
+
+const { release, repo } = siteConfig;
+const download = `https://github.com/${repo}/releases/download/${release}`;
+const releases = `https://github.com/${repo}/releases`;
+
+interface Tab {
+  id: string;
+  label: string;
+  commands: string[];
+  note: string;
+}
+
+const tabs: Tab[] = [
+  {
+    id: "macos",
+    label: "macOS",
+    commands: ["brew install cloudy-native/whambam/whambam"],
+    note: "Apple Silicon and Intel.",
+  },
+  {
+    id: "linux",
+    label: "Linux",
+    commands: [
+      "brew install cloudy-native/whambam/whambam",
+      "# or the static binary, any distro:",
+      `curl -fsSL ${download}/whambam-${release}-$(uname -m)-unknown-linux-musl.tar.gz | sudo tar -xz -C /usr/local/bin whambam`,
+    ],
+    note: "x86_64 and ARM64. Debian packages (.deb) are on the releases page.",
+  },
+  {
+    id: "windows",
+    label: "Windows",
+    commands: [`scoop install https://github.com/${repo}/releases/latest/download/whambam.json`],
+    note: "x86_64 and ARM64. Or download the .zip from the releases page.",
+  },
+  {
+    id: "cargo",
+    label: "Cargo",
+    commands: ["cargo binstall whambam", "# or build from source:", "cargo install whambam"],
+    note: "Any platform with a Rust toolchain.",
+  },
+];
+---
+
+<div class="install rounded-xl border border-border bg-card text-left shadow-sm">
+  <div role="tablist" aria-label="Install whambam" class="flex border-b border-border px-2">
+    {
+      tabs.map((tab, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${tab.id}`}
+          data-tab={tab.id}
+          aria-controls={`panel-${tab.id}`}
+          aria-selected={i === 0 ? "true" : "false"}
+          tabindex={i === 0 ? 0 : -1}
+          class="-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted hover:text-foreground aria-selected:border-accent aria-selected:text-foreground"
+        >
+          {tab.label}
+        </button>
+      ))
+    }
+  </div>
+  {
+    tabs.map((tab, i) => (
+      <div
+        role="tabpanel"
+        id={`panel-${tab.id}`}
+        aria-labelledby={`tab-${tab.id}`}
+        hidden={i !== 0}
+        class="px-4 py-3"
+      >
+        <div class="font-mono text-sm leading-6 [overflow-wrap:anywhere]">
+          {tab.commands.map((c) =>
+            c.startsWith("#") ? (
+              <div class="whitespace-pre-wrap text-muted">{c}</div>
+            ) : (
+              <div class="whitespace-pre-wrap">
+                <span class="select-none text-muted">$ </span>
+                {c}
+              </div>
+            ),
+          )}
+        </div>
+        <p class="mt-2 text-xs text-muted">
+          {tab.note}{" "}
+          <a href={releases} class="underline hover:text-foreground">All releases</a>
+        </p>
+      </div>
+    ))
+  }
+</div>
+
+<script>
+  const root = document.querySelector<HTMLElement>(".install");
+  const tabs = root ? [...root.querySelectorAll<HTMLButtonElement>("[role=tab]")] : [];
+
+  function select(tab: HTMLButtonElement, focus = false) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(`panel-${t.dataset.tab}`)!.hidden = !on;
+    }
+    if (focus) tab.focus();
+  }
+
+  function detect(): string {
+    const ua = navigator.userAgent;
+    if (/Windows/i.test(ua)) return "windows";
+    if (/Mac/i.test(ua)) return "macos";
+    if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return "linux";
+    return "macos";
+  }
+
+  tabs.forEach((tab, i) => {
+    tab.addEventListener("click", () => select(tab));
+    tab.addEventListener("keydown", (e) => {
+      const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (step) select(tabs[(i + step + tabs.length) % tabs.length], true);
+    });
+  });
+
+  const initial = tabs.find((t) => t.dataset.tab === detect());
+  if (initial) select(initial);
+</script>

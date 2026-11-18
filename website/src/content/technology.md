@@ -1,472 +1,254 @@
-# Overview
+whambam is a single Rust binary built on [Tokio](https://tokio.rs), [reqwest](https://docs.rs/reqwest) and [ratatui](https://ratatui.rs). This page explains how a test runs, how whambam keeps its numbers honest, and how the live controls change a test that is already running. The code excerpts are from the current source, trimmed a little for reading.
 
-Whambam is a simple HTTP load testing tool built in Rust, designed to benchmark web server performance with a focus on high throughput and low overhead. This document provides a detailed technical explanation of the application's architecture, performance optimizations, and implementation details.
+# The shape of a run
 
-# Architecture
+<div class="diagram-wrap"><svg class="diagram" viewBox="0 0 760 370" role="img" aria-labelledby="dg-title dg-desc" xmlns="http://www.w3.org/2000/svg"><title id="dg-title">How a whambam run fits together</title><desc id="dg-desc">Flags become a TestConfig. The engine builds a schedule and a pool of workers. Workers claim slots from the schedule, send requests to your server and report results, in batches, to the TestState. The report is built from the TestState. The terminal UI draws the TestState each frame, and its keys change the Control settings, which the pool applies to the workers while the test runs.</desc><defs><marker id="dg-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-head"/></marker><marker id="dg-head-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-head accent"/></marker></defs><g class="dg-node"><rect x="20" y="20" width="130" height="56" rx="10"/><text x="85.0" y="45" class="dg-title">Flags</text><text x="85.0" y="63" class="dg-sub">hey-compatible</text></g><g class="dg-node"><rect x="200" y="20" width="150" height="56" rx="10"/><text x="275.0" y="45" class="dg-title">TestConfig</text><text x="275.0" y="63" class="dg-sub">validated settings</text></g><g class="dg-node"><rect x="400" y="20" width="170" height="56" rx="10"/><text x="485.0" y="45" class="dg-title">Schedule</text><text x="485.0" y="63" class="dg-sub">slots · rate · deadline</text></g><g class="dg-node accent"><rect x="20" y="140" width="130" height="56" rx="10"/><text x="85.0" y="165" class="dg-title">Control</text><text x="85.0" y="183" class="dg-sub">workers · rate</text></g><g class="dg-node"><rect x="200" y="140" width="150" height="56" rx="10"/><text x="275.0" y="165" class="dg-title">Pool</text><text x="275.0" y="183" class="dg-sub">spawns and parks</text></g><g class="dg-node"><rect x="400" y="140" width="170" height="56" rx="10"/><text x="485.0" y="165" class="dg-title">Workers × N</text><text x="485.0" y="183" class="dg-sub">claim · wait · send</text></g><g class="dg-node"><rect x="620" y="140" width="120" height="56" rx="10"/><text x="680.0" y="165" class="dg-title">Your server</text><text x="680.0" y="183" class="dg-sub">HTTP/1.1 · HTTP/2</text></g><g class="dg-node accent"><rect x="20" y="260" width="130" height="56" rx="10"/><text x="85.0" y="285" class="dg-title">Terminal UI</text><text x="85.0" y="303" class="dg-sub">+ − ] [ keys</text></g><g class="dg-node"><rect x="200" y="260" width="150" height="56" rx="10"/><text x="275.0" y="285" class="dg-title">Report</text><text x="275.0" y="303" class="dg-sub">text · JSON · CSV</text></g><g class="dg-node"><rect x="400" y="260" width="170" height="56" rx="10"/><text x="485.0" y="285" class="dg-title">TestState</text><text x="485.0" y="303" class="dg-sub">HDR histogram · series</text></g><path d="M150 48H198" class="dg-edge" marker-end="url(#dg-head)"/><path d="M350 48H398" class="dg-edge" marker-end="url(#dg-head)"/><path d="M275 76V138" class="dg-edge" marker-end="url(#dg-head)"/><text x="283" y="112" class="dg-label" text-anchor="start">clients</text><path d="M485 76V138" class="dg-edge" marker-end="url(#dg-head)"/><text x="493" y="112" class="dg-label" text-anchor="start">slot k, due at t</text><path d="M150 168H198" class="dg-edge accent" marker-end="url(#dg-head-accent)"/><path d="M350 168H398" class="dg-edge" marker-end="url(#dg-head)"/><path d="M570 168H618" class="dg-edge" marker-end="url(#dg-head)"/><path d="M485 196V258" class="dg-edge" marker-end="url(#dg-head)"/><text x="493" y="232" class="dg-label" text-anchor="start">results, batched</text><path d="M400 288H352" class="dg-edge" marker-end="url(#dg-head)"/><path d="M85 260V198" class="dg-edge accent" marker-end="url(#dg-head-accent)"/><text x="93" y="232" class="dg-label" text-anchor="start">live changes</text><path d="M485 316C485 356 85 356 85 318" class="dg-edge accent" marker-end="url(#dg-head-accent)"/><text x="285" y="362" class="dg-label" text-anchor="middle">drawn every frame</text></svg></div>
 
-## System Overview
+1. **Parse and validate.** clap turns the flags into a `TestConfig`: the request (method, headers, body, auth), network settings (proxy, TLS, `--connect-to`, address family), the load (`-n`, `-c`, `-z`) and the pacing (`-q` or `--qps`). Bad input fails here, before any request is sent.
+2. **Build clients.** One shared connection pool for HTTP/1.1, or one client per connection for HTTP/2 (more on that below).
+3. **Run the engine.** A pool of Tokio tasks, the *workers*, claim request slots from a shared *schedule*, send, and report each result over a channel.
+4. **Collect.** A single consumer task folds results into the live `TestState` that the UI draws from.
+5. **Report.** When the test ends, the state becomes a `Report`, written as text, JSON or CSV, compared with a baseline and checked against your `--assert` rules.
 
-Whambam follows a worker pool architecture with lock-free metrics collection, providing a high-performance solution for load testing HTTP endpoints. The system is composed of several key components:
+# The schedule
 
-- **Command Parser**: Processes user inputs to configure the test parameters
-- **Unified Test Runner**: Coordinates the overall test execution
-- **Worker Pool**: Manages concurrent request execution with individual worker threads
-- **Metrics Collection**: Lock-free metrics gathering and analysis
-- **Interactive UI**: Real-time visualization of test progress and results
-
-## Worker Pool Design
-
-The core of Whambam's performance lies in its worker pool implementation. Instead of traditional thread pools that might experience contention under high load, Whambam uses an asynchronous task-based approach with Tokio:
+Every request is a numbered *slot*. Workers don't receive jobs from a queue. Each one claims the next slot number from an atomic counter, which is all the coordination they need:
 
 ```rust
-pub struct WorkerPool {
-    client: Client,
-    job_sender: mpsc::Sender<RequestJob>,
-    worker_handles: Vec<tokio::task::JoinHandle<()>>,
-    is_running: Arc<AtomicBool>,
-}
-
-impl WorkerPool {
-    pub fn new(
-        client: Client,
-        concurrency: usize,
-        metric_sender: mpsc::Sender<RequestMetric>,
-        is_running: Arc<AtomicBool>,
-        rate_limit: f64,
-    ) -> Self {
-        // Create a channel for distributing jobs
-        let (job_sender, job_receiver) = mpsc::channel::<RequestJob>(concurrency * 2);
-        
-        // Share the job receiver among workers
-        let job_receiver = Arc::new(tokio::sync::Mutex::new(job_receiver));
-        
-        // Create worker tasks
-        let mut worker_handles = Vec::with_capacity(concurrency);
-        
-        for _ in 0..concurrency {
-            // Create worker task
-            // ...
-            worker_handles.push(handle);
-        }
-        
-        WorkerPool {
-            client,
-            job_sender,
-            worker_handles,
-            is_running,
-        }
+/// Claim the next request slot, or `None` when the budget is spent.
+pub fn claim(&self) -> Option<usize> {
+    let k = self.next.fetch_add(1, Ordering::Relaxed);
+    match self.budget {
+        Some(b) if k >= b => None,
+        _ => Some(k),
     }
 }
 ```
 
-Each worker independently processes requests, allowing for maximum utilization of system resources. The architecture minimizes contention by:
+`-n 10k` sets the budget, so slot 10,000 and beyond return `None` and the workers finish. `-z 30s` sets a deadline instead, and a timer cancels the run when it passes.
 
-- Using a shared job receiver with a mutex
-- Processing metrics asynchronously via channels
-- Employing lock-free data structures for statistics
+The schedule also decides *when* each slot may be sent:
 
-# Performance Optimizations
+| Pacing | Flag | How it works |
+|---|---|---|
+| Unlimited | (default) | Each worker sends its next request as soon as the last one finishes. |
+| Per worker | `-q 10` | Each worker has its own ticker, as in hey. Total rate ≈ `-q` × `-c`. |
+| Global | `--qps 500` | Slot *k* is due at *start + k / 500 s*, a fixed timetable shared by all workers. |
 
-## Lock-Free Metrics Collection
+# Honest latency: coordinated omission
 
-One of the most significant performance bottlenecks in high-throughput load testing is metrics collection. Whambam implements a lock-free metrics system using atomic operations and concurrent queues:
+Most load generators send a request, wait for the answer, then send the next one. If the server stalls for two seconds, the generator stalls with it and doesn't send the requests it should have sent during those two seconds. Only the one request that hit the stall records a slow time; the hundreds of users who would have arrived during it are never counted. The percentiles look healthy because the bad moments were *omitted*. Gil Tene named this *coordinated omission*.
 
-```rust
-pub struct LockFreeMetrics {
-    // Atomic counters for frequently updated simple metrics
-    completed_requests: AtomicUsize,
-    error_count: AtomicUsize,
-    bytes_sent: AtomicU64,
-    bytes_received: AtomicU64,
-    
-    // Concurrent queue for incoming metrics
-    metrics_queue: Arc<SegQueue<RequestMetric>>,
-    
-    // These are updated less frequently and can use a lightweight RwLock
-    status_counts: Arc<PLRwLock<HashMap<u16, usize>>>,
-    
-    // Histogram for latency calculations
-    latency_histogram: Arc<RwLock<Histogram<u64>>>,
-    
-    // Derived statistics calculated periodically
-    min_latency: AtomicU64,
-    max_latency: AtomicU64,
-    p50_latency: AtomicU64,
-    p90_latency: AtomicU64,
-    p95_latency: AtomicU64,
-    p99_latency: AtomicU64,
-}
-```
-
-## HTTP Client Optimization
-
-The HTTP client is configured for optimal performance in high-throughput scenarios:
+With `--qps`, whambam measures from when each request was *due*, not from when a worker got around to sending it:
 
 ```rust
-fn create_http_client(config: &TestConfig) -> Client {
-    let mut client_builder = Client::builder();
-    
-    // Configure options based on user preferences
+let sent = Instant::now();
+let (outcome, latency) = self.sender.send().await;
+// Charge the time spent waiting for a free worker (coordinated omission).
+let begun = due.unwrap_or(sent).min(sent);
+let metric = RequestMetric {
+    start_offset: begun.saturating_duration_since(self.schedule.start()),
+    latency: latency + sent.duration_since(begun),
     // ...
-    
-    // Optimize connection pooling
-    client_builder = client_builder
-        .pool_max_idle_per_host(config.concurrent * 2)
-        .pool_idle_timeout(Duration::from_secs(300))
-        .tcp_keepalive(Duration::from_secs(60));
-    
-    client_builder.build().unwrap_or_else(|_| {
-        // Fallback to default client
-        Client::new()
-    })
+};
+```
+
+A worked example: at `--qps 100`, a request is due every 10 ms. The server freezes for one second. With a sender-side clock, you'd see one 1-second request and a p99 that barely moves. With the due-time clock, the 100 requests that should have gone out during that second are charged for the time they waited: 1 s, 990 ms, 980 ms, … The p99 now tells you what users would have seen.
+
+The JSON report says which clock was used: `"latency_corrected": true` for `--qps` runs. `-q` keeps hey's per-worker meaning and its uncorrected measurement, so existing scripts behave as they always have.
+
+# Steering a running test
+
+The live controls (`+` / `-` for workers, `]` / `[` for rate) are built on a Tokio [`watch`](https://docs.rs/tokio/latest/tokio/sync/watch/) channel: a single value that many tasks can observe. The UI writes to it, and the pool and every worker hold a receiver.
+
+```rust
+pub struct Settings {
+    pub workers: usize,
+    /// Requests per second: total for `--qps`, per worker for `-q`, `None` when unthrottled.
+    pub rate: Option<f64>,
 }
 ```
 
-## Efficient Histogram Implementation
+Each key press scales by 10% (at least one step). What happens next depends on what changed:
 
-Latency statistics are calculated using HDRHistogram, which provides accurate percentile measurements with minimal overhead:
+- **More workers.** The pool spawns new worker tasks up to the new count. With HTTP/2 they share the existing connections.
+- **Fewer workers.** Nothing is cancelled mid-request. Each worker knows its index, and a worker whose index is at or above the live count *parks* after its current request, waiting on the `watch` channel until the count grows again.
+- **New `-q` rate.** Each worker rebuilds its ticker at the new interval before claiming its next slot.
+- **New `--qps` rate.** This needs more care, because slots are already on a timetable. Workers may be asleep waiting for slots that were scheduled at the old rate. The schedule starts a new *segment* at the first slot that isn't yet due, then wakes every sleeping worker to re-read its due time:
 
 ```rust
-// Recording a metric
-let latency_as_u64 = (metric.latency_ms * 1000.0) as u64;
-if let Ok(mut hist) = self.latency_histogram.write() {
-    let _ = hist.record(latency_as_u64);
-}
-
-// Updating percentiles
-if let Ok(hist) = self.latency_histogram.read() {
-    let p50 = hist.value_at_quantile(0.5) as u64;
-    let p90 = hist.value_at_quantile(0.9) as u64;
-    let p95 = hist.value_at_quantile(0.95) as u64;
-    let p99 = hist.value_at_quantile(0.99) as u64;
-    
-    self.p50_latency.store(p50, Ordering::Relaxed);
-    self.p90_latency.store(p90, Ordering::Relaxed);
-    self.p95_latency.store(p95, Ordering::Relaxed);
-    self.p99_latency.store(p99, Ordering::Relaxed);
+/// Change the global rate from now: every slot not yet due under the old
+/// rate is re-timed at the new rate, starting at `now`. Slots already past
+/// due (a backlog) become due immediately rather than carrying the debt.
+pub fn set_global_rate(&self, qps: f64, now: Instant) {
+    // ...
+    *guard = Some(Segment { base_k, base_t: now, qps });
+    drop(guard);
+    self.retimed.send_replace(());
 }
 ```
 
-# UI Implementation
+Without re-timing, raising the rate would only take effect after the queued slots drained, which could be seconds later. A test checks that a rate change applies straight away.
 
-Whambam features an interactive terminal UI built with Ratatui and Crossterm. The UI is designed to:
+Every change is recorded as an *adjustment* with its time, worker count and rate. The charts mark adjustments with vertical lines, the text report lists them under "Load changes", and the JSON report includes them in `adjustments`. Stepping the rate up until the latency line bends is a quick way to find a service's capacity in one session.
 
-- Display real-time metrics with minimal impact on test performance
-- Provide different views of test results (summary, detailed statistics)
-- Allow user interaction during test execution
+# Measuring a request
+
+A request's latency runs from sending it to reading the **last byte** of the body, not just the headers. A slow or large body is part of what users wait for:
 
 ```rust
-pub fn run(&mut self) -> Result<()> {
-    // Set up terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Start the event loop
-    let tick_rate = Duration::from_millis(100);
-    let mut last_tick = Instant::now();
-
-    loop {
-        // ...
+let started = Instant::now();
+let outcome = match self.builder().send().await {
+    Ok(mut resp) => {
+        let status = resp.status().as_u16();
+        let mut bytes = 0u64;
+        loop {
+            match resp.chunk().await {
+                Ok(Some(chunk)) => bytes += chunk.len() as u64,
+                Ok(None) => break Outcome { status: Ok(status), bytes_received: bytes },
+                Err(e) => break Outcome { status: Err(classify(&e)), bytes_received: bytes },
+            }
+        }
     }
+    Err(e) => Outcome { status: Err(classify(&e)), bytes_received: 0 },
+};
+(outcome, started.elapsed())
+```
+
+The body is counted chunk by chunk and dropped, never buffered whole, so large responses don't cost memory.
+
+Any status below 400 counts as a success. Transport failures are sorted into ten kinds, so a run with 4,000 failures shows *"3,998 connection refused, 2 timeout"* rather than 4,000 lines of error text: `timeout`, `dns`, `connection_refused`, `connection_closed`, `tls`, `connect`, `redirect`, `body`, `request` and `other`.
+
+whambam doesn't report per-phase timings (DNS, connect, TLS, time to first byte). hey prints them, but reqwest doesn't expose those phases, and whambam won't show numbers it didn't measure.
+
+# Connections, DNS and TLS
+
+**HTTP/1.1** sends one request at a time per connection. All workers share one reqwest client whose pool keeps up to one idle connection per worker, so `-c 50` settles at 50 keep-alive connections. `--disable-keepalive` sets the pool size to zero, so every request opens a new connection.
+
+**HTTP/2** carries many requests over one connection, so a single shared client would put every worker on one connection. whambam builds one client per `-c` connection instead. `-p 10` puts 10 workers on each, so `-c 5 -p 10` means 5 connections carrying 50 concurrent streams.
+
+**DNS** goes through whambam's own resolver. It caches lookups and supports `--connect-to` (send traffic for `api.example.com:443` to `10.0.0.5:8443` while keeping the Host header and TLS name) and `-4` / `-6`.
+
+**TLS** is [rustls](https://github.com/rustls/rustls) with the *ring* crypto provider. The usual alternative, aws-lc, needs extra tools to build for Windows and static Linux targets. Mutual TLS (`--cert` / `--key`), extra CAs (`--cacert`), proxies (HTTP and SOCKS5) and compression (gzip, brotli, deflate, zstd) all come from reqwest.
+
+# Collecting statistics
+
+Workers never touch the shared statistics. Each one sends a small `RequestMetric` (a timestamp, the latency, the outcome and byte counts) down a bounded channel. One consumer task receives them in batches of up to 512 and records each batch under a single lock:
+
+```rust
+let mut batch = Vec::with_capacity(BATCH);
+while rx.recv_many(&mut batch, BATCH).await > 0 {
+    {
+        let mut guard = state.lock();
+        for m in &batch {
+            guard.record(m);
+        }
+    }
+    // ...the CSV writer, if any, gets the same batch
+    batch.clear();
 }
 ```
+
+The lock is taken once per batch, never per request in a worker, and the only other code that takes it is the UI drawing a frame. That is simpler and faster than per-request atomics or lock-free queues.
+
+`TestState` holds:
+
+- an [HDR histogram](https://hdrhistogram.github.io/HdrHistogram/) of every latency, in microseconds, from 1 µs to one hour with three significant digits. Every percentile, from p50 to p99.9, is computed from all requests, not from a sample.
+- counts per status code and per error kind, plus bytes sent and received.
+- a time series with one sample per 100 ms (throughput and mean latency), keeping the last minute for the charts.
+- the list of live adjustments.
+
+# The interface
+
+The UI is [ratatui](https://ratatui.rs) on crossterm. It runs in a blocking section (Tokio's `block_in_place`), so drawing never holds up the async workers. Each frame, at `--fps` (10 by default), it locks the state, advances the time series and draws one of three tabs: the dashboard, charts, and status codes and errors. Then it waits for a key until the next frame is due.
+
+With `--baseline report.json`, the numbers on the dashboard show their change from the baseline, in red when worse, and the charts draw the baseline as reference lines. `r` runs the same test again without leaving the UI.
+
+When stdout isn't a terminal (piped, redirected, or in CI), whambam skips the UI, prints progress to stderr and writes the report to stdout.
+
+# Reports, baselines and checks
+
+There is one `Report` model, and every output format renders it:
+
+- **text**: a hey-style summary with a histogram, percentiles, status codes, errors and load changes.
+- **JSON**: everything, documented by a [JSON Schema](https://github.com/cloudy-native/whambam.dev/blob/main/schema/report.schema.json).
+- **CSV**: one row per request, streamed as the test runs (`offset_s, latency_ms, status, error, bytes_received`).
+
+A JSON report doubles as a **baseline**. `--baseline` compares the run with it metric by metric, and `--assert` turns the comparison into a pass or fail:
+
+```bash
+whambam https://staging.example.com -z 30s --qps 200 \
+  --baseline baseline.json --assert 'p99<+10%,errors<1%'
+```
+
+A check is a metric (`p50` … `p99.9`, `mean`, `min`, `max`, `rps`, `success`, `errors`), an operator and a limit: absolute (`200ms`, `1%`, `1000`) or relative to the baseline (`+10%`). If any check fails, whambam exits with status 1, which fails a CI job. `whambam compare old.json new.json` runs the same comparison on two saved reports without sending any requests.
+
+The bundled [GitHub Action](https://github.com/cloudy-native/whambam.dev/blob/main/action.yml) installs the right binary for the runner, runs the test, adds a summary table to the job page and fails the job when a check fails.
+
+# Builds and releases
+
+Each release is built natively on a GitHub-hosted runner of the same OS and CPU, with no cross-compiling, and each binary is run once before it is packaged:
+
+| Target | Runner | Notes |
+|---|---|---|
+| macOS Apple Silicon, Intel | macos-15, macos-15-intel | |
+| Linux x86_64, ARM64 (glibc) | ubuntu-24.04, ubuntu-24.04-arm | also `.deb` packages |
+| Linux x86_64, ARM64 (musl) | ubuntu-24.04, ubuntu-24.04-arm | static, any distro |
+| Windows x86_64, ARM64 | windows-2025, windows-11-arm | |
+
+A release publishes to GitHub Releases, the Homebrew tap and crates.io, with SHA-256 checksums for every file. It then runs the GitHub Action against the new release on Linux, macOS and Windows.
+
+# Stack
+
+| Crate | Used for |
+|---|---|
+| tokio, tokio-util | async runtime, timers, channels, cancellation |
+| reqwest, rustls (ring) | HTTP/1.1 and HTTP/2 client, TLS |
+| hdrhistogram | latency percentiles |
+| ratatui | terminal UI |
+| clap | command-line flags |
+| serde, serde_json, csv | reports |
 
 # Does it work?
 
-Let's set up a test.
+A load generator has two jobs: produce enough load, and report what happened accurately. We tested both against hey and [bombardier](https://github.com/codesenberg/bombardier), using the demo server from the whambam repository.
 
-- Use a trivial, local web server
-- Run whambam against it
-- Run other similar tools
-- Compare results
+**Setup:** a Mac with an Apple M3 (8 cores, 8 GB), with the server and the load generator on the same machine. whambam 1.1.0, hey from Homebrew and bombardier from `go install`. Every run used 50 connections (`-c 50`), and every test ran twice.
 
-## Running a local web server
+## Accuracy: a server with realistic latency
 
-We use Python’s built-in HTTP server—no Node/`http-server` install, and it works reliably on modern macOS:
+The demo server answers in 3 to 20 ms on a slow wave, with a 1% tail at about 40 ms and 0.4% `503` errors. Here, the server sets the pace, and a good tool should report it faithfully.
 
 ```bash
-$ python3 -m http.server 8080
+cargo run --release -p test-utils --bin demo-server -- 8082
+whambam http://127.0.0.1:8082/ -z 21s -c 50
 ```
 
-This serves files from your current directory on port 8080 (the same port used in the benchmarks below). Leave it running in one terminal and point the load tools at `http://localhost:8080` in another.
+| Tool | Requests/s | p50 | p90 | p99 | 503s |
+|---|---|---|---|---|---|
+| hey | 6,180 · 6,042 | 6.0 · 6.2 ms | 14.6 · 14.8 ms | 44.5 · 24.9 ms | 0.40% · 0.39% |
+| bombardier | 6,279 · 6,185 | 5.9 · 6.0 ms | 14.6 · 14.6 ms | 44.3 · 44.1 ms | 0.38% · 0.42% |
+| whambam | 6,061 · 6,111 | 6.2 · 6.1 ms | 14.8 · 14.8 ms | 44.3 · 32.2 ms | 0.38% · 0.37% |
 
-By default, whambam displays an interactive terminal UI (dashboard with a combined throughput/latency chart, plus Charts and Status Codes tabs).
+The three tools agree to within 4% on throughput and about 0.3 ms on p50 and p90. The p99 jumps between runs for every tool because it sits right at the edge of the server's 1% slow tail, so a few requests either way move it between about 25 and 44 ms. That's the server's behaviour, and all three tools saw it.
 
-![whambam UI screenshot](/images/ui-benchmark-comparison.png)
+## Raw speed: a server that answers instantly
 
-# Technology Stack
-
-Whambam leverages several key Rust crates to achieve its performance goals:
-
-- tokio: Asynchronous runtime for concurrent operations
-- reqwest: HTTP client with performance optimization options
-- ratatui + crossterm: Terminal UI framework for interactive display
-- hdrhistogram: Efficient latency percentile tracking
-- parking_lot: High-performance synchronization primitives
-- crossbeam-queue: Lock-free concurrent queues
-
-## Asynchronous Processing
-
-The application is built on Tokio's async runtime, allowing it to:
-
-- Execute thousands of concurrent HTTP requests with minimal overhead
-- Process responses without blocking threads
-- Coordinate metrics collection and UI updates efficiently
-
-```rust
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Application initialization and execution
-    // ...
-}
-```
-
-## Memory Efficiency
-
-Rust's ownership model and zero-cost abstractions allow Whambam to achieve high performance with minimal memory overhead. The application:
-
-- Reuses buffers where possible
-- Avoids unnecessary copies of request/response data
-- Uses efficient data structures for metrics collection
-
-# Core Components
-
-## Unified Runner
-
-The `UnifiedRunner` coordinates the overall test execution:
-
-```rust
-pub struct UnifiedRunner {
-    config: TestConfig,
-    metrics: SharedMetrics,
-    shared_state: Option<SharedState>,
-    is_running: Arc<AtomicBool>,
-    tx: mpsc::Sender<Message>,
-    rx: mpsc::Receiver<Message>,
-}
-```
-
-## Worker Pool Implementation
-
-The worker loop demonstrates how requests are processed efficiently:
-
-```rust
-async fn worker_loop(
-    client: Client,
-    job_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<RequestJob>>>,
-    metric_sender: mpsc::Sender<RequestMetric>,
-    is_running: Arc<AtomicBool>,
-    sem: Arc<tokio::sync::Semaphore>,
-    rate_limit: f64,
-) {
-    while is_running.load(Ordering::SeqCst) {
-        // Get the next job
-        let job = {
-            let mut receiver = job_receiver.lock().await;
-            match receiver.recv().await {
-                Some(job) => job,
-                None => break,
-            }
-        };
-
-        // Apply rate limiting if configured
-        if rate_limit > 0.0 {
-            let delay_ms = (1000.0 / rate_limit) as u64;
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-        }
-
-        // Acquire a permit from the semaphore
-        let _permit = sem.acquire().await.unwrap();
-
-        // Execute the request
-        let result = Self::execute_request(
-            &client,
-            job.url,
-            job.method,
-            &job.headers,
-            job.body,
-            job.basic_auth,
-            job.timeout,
-            job.start_time,
-        )
-        .await;
-
-        // Send the result metric
-        let _ = metric_sender.send(result).await;
-    }
-}
-```
-
-## Lock-Free Metrics Recording
-
-The metrics recording path is optimized for minimal contention:
-
-```rust
-pub fn record(&self, metric: &RequestMetric) {
-    // Increment atomic counters immediately
-    self.completed_requests.fetch_add(1, Ordering::Relaxed);
-    self.bytes_sent.fetch_add(metric.bytes_sent, Ordering::Relaxed);
-    self.bytes_received.fetch_add(metric.bytes_received, Ordering::Relaxed);
-
-    // Update error count if needed
-    if metric.is_error {
-        self.error_count.fetch_add(1, Ordering::Relaxed);
-    }
-
-    // Update min/max latency using compare_exchange
-    let latency_as_u64 = (metric.latency_ms * 1000.0) as u64;
-
-    // Update min latency with compare_exchange loop
-    let mut current_min = self.min_latency.load(Ordering::Relaxed);
-    while latency_as_u64 < current_min {
-        match self.min_latency.compare_exchange(
-            current_min,
-            latency_as_u64,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => break,
-            Err(x) => current_min = x,
-        }
-    }
-
-    // Queue the metric for batch processing
-    self.metrics_queue.push(metric.clone());
-
-    // Periodically process the queued metrics
-    let completed = self.completed_requests.load(Ordering::Relaxed);
-    if completed % 100 == 0 {
-        self.process_queued_metrics();
-        self.update_statistics();
-    }
-}
-```
-
-# Does it work? (benchmarks)
-
-Be aware that any server—whether local or not—could be the performance limiter. In fact, for testing comparisons, we want it to be.
-
-## hey
-
-Install and run:
+`demo-server --fast` replies immediately with a tiny body. Now the load generator is the bottleneck.
 
 ```bash
-brew install hey
-hey -z 10s -c 125 http://localhost:8080
+cargo run --release -p test-utils --bin demo-server -- 8081 --fast
+whambam http://127.0.0.1:8081/ -z 10s -c 50
 ```
 
-Example results (after warmup):
+| Tool | Requests/s | p50 | p99 | Errors |
+|---|---|---|---|---|
+| hey | 139,992 · 173,054 | 0.20 ms | 1.2 ms | 1,495 · 0 |
+| bombardier | 220,794 · 217,595 | 0.20 ms | 0.67 ms | 0 |
+| whambam | 151,362 · 151,706 | 0.32 ms | 0.69 ms | 0 |
 
-```text
-$ hey -z 10s -c 125 http://localhost:8080
+bombardier, built on [fasthttp](https://github.com/valyala/fasthttp), is the fastest generator here, at about 45% more requests per second than whambam. whambam is in hey's range and steadier from run to run. In hey's first run, 1,495 requests failed with `can't assign requested address`: hey ran out of local ports. hey only reports latency to 0.1 ms, which is why its p99 reads 1.2 ms.
 
-Summary:
-  Total:	10.0842 secs
-  Slowest:	1.0425 secs
-  Fastest:	0.0085 secs
-  Average:	0.1013 secs
-  Requests/sec:	1228.7495
+At 150,000 requests per second, whambam is unlikely to be the limit for a real service over a real network. If you need more from one machine, run several copies or use bombardier or wrk.
 
-
-Response time histogram:
-  0.008 [1]	|
-  0.112 [11299]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
-  0.215 [1012]	|■■■■
-  0.319 [15]	|
-  0.422 [12]	|
-  0.525 [10]	|
-  0.629 [11]	|
-  0.732 [7]	|
-  0.836 [9]	|
-  0.939 [8]	|
-  1.042 [7]	|
-
-
-Latency distribution:
-  10% in 0.0877 secs
-  25% in 0.0893 secs
-  50% in 0.1048 secs
-  75% in 0.1081 secs
-  90% in 0.1114 secs
-  95% in 0.1142 secs
-  99% in 0.1283 secs
-
-Details (average, fastest, slowest):
-  DNS+dialup:	0.0001 secs, 0.0085 secs, 1.0425 secs
-  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0023 secs
-  req write:	0.0000 secs, 0.0000 secs, 0.0003 secs
-  resp wait:	0.1012 secs, 0.0085 secs, 1.0342 secs
-  resp read:	0.0000 secs, 0.0000 secs, 0.0004 secs
-
-Status code distribution:
-  [200]    12391 responses
-```
-
-## wrk
-
-Install and run:
-
-```bash
-brew install wrk
-wrk -t 125 -d 10 -c 125 http://localhost:8080
-```
-
-Runs a load test for 10 seconds with 125 concurrent connections. We allocate 125 threads to avoid any contention between threads and connections.
-
-Here are the results, again after letting the local server warm up:
-
-```text
-$ wrk -t 125 -d 10 -c 125 http://localhost:8080
-Running 10s test @ http://localhost:8080
-125 threads and 125 connections
-Thread Stats   Avg      Stdev     Max   +/- Stdev
-Latency   107.51ms   70.56ms   1.04s    96.22%
-Req/Sec    10.03      2.51    40.00     94.04%
-12484 requests in 10.10s, 847.62MB read
-Requests/sec:   1236.51
-Transfer/sec:     83.96MB
-```
-
-## bombardier
-
-Install and run:
-
-```bash
-brew install bombardier
-bombardier http://localhost:8080
-```
-
-Example results:
-
-```text
-$ bombardier http://localhost:8080
-Bombarding http://localhost:8080 for 10s using 125 connection(s)
-[===============================================================================================================================================] 10s
-Done!
-Statistics        Avg      Stdev        Max
-  Reqs/sec      1173.66     352.69    1654.16
-  Latency      106.08ms    17.72ms   540.28ms
-  HTTP codes:
-    1xx - 0, 2xx - 11847, 3xx - 0, 4xx - 0, 5xx - 0
-    others - 0
-  Throughput:    79.72MB/s
-```
-
-Again, this looks comfortably in range.
-
-## Now whambam
-
-Install and run:
-
-```bash
-brew tap cloudy-native/whambam
-brew install whambam
-whambam -z 10s -c 125 http://localhost:8080
-```
-
-By default, whambam displays an interactive terminal UI (see screenshot above). All the numbers look good and in range.
-
-With `--no-ui`, whambam prints a hey-inspired text report. **Accuracy over layout:** true mean latency, real HDR histogram buckets, end-to-end timing (including body), and no fake DNS/phase breakdown. See Docs for the full table. For live dual-axis charts, use the default UI.
+We first tried Python's `http.server` as a target, as many guides suggest. Under 50 connections it refused or dropped from a quarter to nearly all of the requests, whichever tool sent them, so it tests Python rather than the load generator.

@@ -37,3 +37,49 @@ body {
 .prose code::after {
   content: none;
 }
+
+/* Inline SVG diagrams (technology page) */
+.diagram-wrap {
+  @apply my-8 overflow-x-auto;
+}
+.diagram {
+  @apply w-full h-auto;
+  min-width: 620px;
+  font-family: inherit;
+}
+.diagram .dg-node rect {
+  fill: rgb(var(--color-card));
+  stroke: rgb(var(--color-border));
+  stroke-width: 1.5;
+}
+.diagram .dg-node.accent rect {
+  stroke: rgb(var(--color-accent));
+}
+.diagram .dg-title {
+  fill: rgb(var(--color-foreground));
+  font-size: 14px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+.diagram .dg-sub,
+.diagram .dg-label {
+  fill: rgb(var(--color-muted));
+  font-size: 11.5px;
+}
+.diagram .dg-sub {
+  text-anchor: middle;
+}
+.diagram .dg-edge {
+  fill: none;
+  stroke: rgb(var(--color-muted));
+  stroke-width: 1.5;
+}
+.diagram .dg-edge.accent {
+  stroke: rgb(var(--color-accent));
+}
+.diagram .dg-head {
+  fill: rgb(var(--color-muted));
+}
+.diagram .dg-head.accent {
+  fill: rgb(var(--color-accent));
+}
