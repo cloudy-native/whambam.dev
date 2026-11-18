@@ -14,7 +14,7 @@ A Cargo workspace: the `whambam` crate (root) plus `test-utils` (mock HTTP/1.1 +
 - There is exactly one CLI definition (`src/cli`). The binary (`src/main.rs`) only calls `whambam::run`.
 - TLS is rustls with the `ring` provider (installed in `http::client`); do not enable reqwest's `rustls` (aws-lc) feature, it complicates Windows/musl builds.
 - `schema/report.schema.json` documents `-o json`; keep it in sync with `src/report/mod.rs` (a test checks required keys).
-- `action.yml` is the GitHub Action; `.github/workflows/action-test.yml` tests it against each published release.
+- `action.yml` is the GitHub Action; `.github/workflows/action-test.yml` tests it against each published release (release.yml calls it last).
 - `demo/record.sh` re-records the README GIF and website screenshots with vhs.
 - CI (`.github/workflows/ci.yml`) runs on Linux x86_64 only. Releases build natively per target via `build.yml`; never trigger `release.yml` without the user asking. Manual runs default to `dry_run` (build and package only, publish nothing).
 

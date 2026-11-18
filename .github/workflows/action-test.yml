@@ -1,10 +1,18 @@
 name: Action self-test
 
 # Exercises action.yml (install + run + --assert + job summary) against a real
-# release on each runner OS. Runs when a release is published, or by hand.
+# release on each runner OS. release.yml calls it after publishing (releases
+# made with GITHUB_TOKEN don't fire `release` events); it also runs for releases
+# published by hand, or from Actions → Action self-test → Run workflow.
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: Release tag to install
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       version:
@@ -55,3 +63,20 @@ jobs:
         shell: bash
         run: |
           jq -e '.summary.requests == 200 and (.assertions | all(.passed)) and (.comparison | length == 8)' current.json
+
+      - name: Failing check (must fail, and still write its report)
+        id: failing
+        continue-on-error: true
+        uses: ./
+        with:
+          url: http://127.0.0.1:8765/
+          args: -n 100 -c 5
+          assert: p99<0.001ms
+          report: failing.json
+          version: ${{ github.event.release.tag_name || inputs.version || 'latest' }}
+
+      - name: Check the failing run
+        shell: bash
+        run: |
+          test "${{ steps.failing.outcome }}" = failure
+          jq -e '.assertions | any(.passed | not)' failing.json

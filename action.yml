@@ -79,14 +79,18 @@ runs:
         BASELINE: ${{ inputs.baseline }}
         REPORT: ${{ inputs.report }}
       run: |
+        # GitHub runs this with `bash -e`: capture whambam's status instead of stopping on it,
+        # so the summary and annotations are written when a check fails, which is when they matter.
         set -uo pipefail
         extra=()
         [ -n "$ASSERT" ] && extra+=(--assert "$ASSERT")
         [ -n "$BASELINE" ] && extra+=(--baseline "$BASELINE")
+        status=0
         # shellcheck disable=SC2086 # ARGS is a list of flags
-        whambam "$URL" --no-ui -o json --output "$REPORT" $ARGS ${extra[@]+"${extra[@]}"}
-        status=$?
+        whambam "$URL" --no-ui -o json --output "$REPORT" $ARGS ${extra[@]+"${extra[@]}"} || status=$?
         if [ -f "$REPORT" ]; then
-          jq -r --arg url "$URL" -f "$GITHUB_ACTION_PATH/packaging/action-summary.jq" "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          jq -r --arg url "$URL" --arg out summary -f "$GITHUB_ACTION_PATH/packaging/action-summary.jq" "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          # One ::error:: annotation per failed check, shown on the run page and the pull request.
+          jq -r --arg url "$URL" --arg out annotations -f "$GITHUB_ACTION_PATH/packaging/action-summary.jq" "$REPORT"
         fi
-        exit $status
+        exit "$status"
